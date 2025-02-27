@@ -1,0 +1,12 @@
+cmake_minimum_required(VERSION 2.12)
+
+project(bingham_mac)
+
+find_package(inmost REQUIRED)
+if(inmost_FOUND)
+	message("inmost found: include ${INMOST_INCLUDE_DIRS}")
+	include_directories("${INMOST_INCLUDE_DIRS}")
+endif()
+
+add_executable(main main.cpp)
+target_link_libraries(main ${INMOST_LIBRARIES})
