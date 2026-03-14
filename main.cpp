@@ -13,13 +13,16 @@ int n1;
 int n2;
 double hx;
 double hy;
-int test = 1;
+int test = 0; // 0 -- regularized cavity, 1,2 -- analytical tests for Stokes problem alone
 double R1 = 4.2985;
 double R2 = 0.1;
 // Bingham fluid
 double mu = 1.0;
 double tau_s = 0.0;
 
+bool divgrad = true; // Delta_h = 2 div_h D_h (true), standard five-point Laplace (false)
+
+// exact solution for analytical tests, including velocity BC: u,v,p
 double exact(int grid, double x, double y)
 {
 	if(test == 1)
@@ -44,21 +47,11 @@ double exact(int grid, double x, double y)
 		else // if(grid == 3) // Ph
 		    	return df*dg*sin(2*M_PI*f)*sin(2*M_PI*g);
 	}
-	else if(test == 3)
+	else // if(test == 0)
 	{
+		// no analytical solution, it is used to setup velocity BC
 		if(grid == 1) // Uh
-			return -1.0;
-		else if(grid == 2) // Vh
-			return 0.0;
-		else //if(grid == 3) // Ph
-			return x-0.5;
-	}
-	else
-	{
-		if(grid == 1) // Uh
-			// return 1.0;//16*x*x*(1-x)*(1-x);
 			return fabs(y-1) < 1.0e-6 ? 16*x*x*(1-x)*(1-x) : 0.0;
-			// return fabs(y-1) < 1.0e-6 ? 1.0 : 0.0;
 		else if(grid == 2) // Vh
 			return 0.0;
 		else // if(grid == 3) // Ph
@@ -66,6 +59,7 @@ double exact(int grid, double x, double y)
 	}
 }
 
+// analytical RHS for Stokes substep
 double rhs_exact(int grid, double x, double y)
 {
 	if(test == 1)
@@ -96,31 +90,27 @@ double rhs_exact(int grid, double x, double y)
 			return -r*(d2v_dx2 + d2v_dy2) + dp_dy;
 		}
 	}
-	else if(test == 3)
-	{
-		return grid == 1 ? 1.0 : 0.0;
-	}
-	else
+	else // if(test == 0)
 	{
 		return 0.0;
 	}
 }
 
+// DOF on staggered grid
 typedef struct pint
 {
-	int i;
-	int j;
+	int i, j;
 	double coef;
-	int grid;
+	int grid; // 1(Uh), 2(Vh), 3(Ph), 4(Qh)
 	pint(int grid = -1, int i = -10, int j = -10) : i(i), j(j), grid(grid) {}
-	static int nx(int grid)
+	static int nx(int grid) // amount of unknowns in X direction
 	{
 		if(grid == 1) return n1;
 		else if(grid == 2) return n1-1;
 		else if(grid == 3) return n1-1;
 		else return n1;
 	}
-	static int ny(int grid)
+	static int ny(int grid) // amount of unknowns in Y direction
 	{
 		if(grid == 1) return n2-1;
 		else if(grid == 2) return n2;
@@ -149,26 +139,27 @@ typedef struct pint
 	}
 	double x() const
 	{
-		if(grid == 1)
+		if(grid == 1 || grid == 4)
 			return std::min(std::max(0.0,(i+0.5)*hx), 1.0);
-		else // if(grid == 2)
+		else
 			return i*hx;
 	}
 	double y() const
 	{
-		if(grid == 2)
+		if(grid == 2 || grid == 4)
 			return std::min(std::max(0.0,(j+0.5)*hy), 1.0);
-		else // if(grid == 1)
+		else
 			return j*hy;
 	}
 } pint;
 
+// controls layout of DOFs in vector
 struct layout
 {
 	int N;
 	int * grids;
 	int * offsets;
-	layout(int N, const int _grids[N]) : N(N)
+	layout(int N, const int _grids[]) : N(N)
 	{
 		grids = new int[N];
 		offsets = new int[N+1];
@@ -194,38 +185,25 @@ struct layout
 	}
 	int dof(const pint& p, int pos) const
 	{
-		return p.dof() + (p.inside() ? offset(pos) : 0);
+		if(p.inside()) return p.dof() + offset(pos);
+		throw 1;
+		return -1;
 	}
 };
-#if 0
-// convert geometric indices (xi,yj) on grid to sequential dof indices
-inline void geom2dof(int grid, const pint& pg, pint& p)
-{
-	p.i = pg.i; p.j = pg.j;
-	if(grid == 1) // Uh
-		p.j--;
-	else if(grid == 2)  // Vh
-		p.i--;
-	else if(grid == 3) // Ph
-		p.i--, p.j--;
-	else //if(grid == 4) // Qh
-		;
-}
-#endif
 
 void laplace(int i, int j, int grid, pint * dofs1, pint * dofs2, double mult)
 {
-	if(grid == 1) // d2/dx2
+	double coef1 = divgrad ? 2.0 : 1.0;
+	if(grid == 1) // \Delta_h, x component
 	{
 		// Uh
-		double h[2] = {hx,hx};
+		double h[2] = {hx,hx}, coef[2];
 		dofs1[0] = pint(1,i+1,j);
 		dofs1[1] = pint(1,i-1,j);
-		h[0] = dofs1[0].inside() ? hx : hx/2;
-		h[1] = dofs1[1].inside() ? hx : hx/2;
-		dofs1[0].coef = 2.0/(0.5*(h[0]+h[1])) * 1.0/h[0] * mult;
-		dofs1[1].coef = 2.0/(0.5*(h[0]+h[1])) * 1.0/h[1] * mult;
-
+		coef[0] = dofs1[0].inside() ? 1.0 : 0.5;
+		coef[1] = dofs1[1].inside() ? 1.0 : 0.5;
+		dofs1[0].coef = coef1/(h[0]*h[0]*coef[0]) * mult;
+		dofs1[1].coef = coef1/(h[1]*h[1]*coef[1]) * mult;
 		dofs1[2] = pint(1,i,j+1); dofs1[2].coef = 1.0/(hx*hy) * mult;
 		dofs1[3] = pint(1,i,j-1); dofs1[3].coef = 1.0/(hx*hy) * mult;
 		dofs1[4] = pint(1,i,j  ); dofs1[4].coef = 0.0;
@@ -236,25 +214,25 @@ void laplace(int i, int j, int grid, pint * dofs1, pint * dofs2, double mult)
 		dofs2[2] = pint(2,i,j    ); dofs2[2].coef = -1.0/(hy*hy) * mult;
 		dofs2[3] = pint(2,i,j-1  ); dofs2[3].coef =  1.0/(hy*hy) * mult;
 	}
-	else // d2/dy2
+	else // \Delta_h, y component
 	{
 		// Vh
-		double h[2] = {hy,hy};
+		double h[2] = {hy,hy}, coef[2];
 		dofs2[0] = pint(2,i,j+1);
 		dofs2[1] = pint(2,i,j-1);
-		h[0] = dofs2[0].inside() ? hy : hy/2;
-		h[1] = dofs2[1].inside() ? hy : hy/2;
-		dofs2[0].coef = 2.0/(0.5*(h[0]+h[1])) * 1.0/h[0] * mult;
-		dofs2[1].coef = 2.0/(0.5*(h[0]+h[1])) * 1.0/h[1] * mult;
-		dofs2[2] = pint(2,i+1,j); dofs2[2].coef = 1.0/(hx*hy) * mult;
-		dofs2[3] = pint(2,i-1,j); dofs2[3].coef = 1.0/(hx*hy) * mult;;
+		coef[0] = dofs2[0].inside() ? 1.0 : 0.5;
+		coef[1] = dofs2[1].inside() ? 1.0 : 0.5;
+		dofs2[0].coef = coef1/(h[0]*h[0]*coef[0]) * mult;
+		dofs2[1].coef = coef1/(h[1]*h[1]*coef[1]) * mult;
+		dofs2[2] = pint(2,i+1,j); dofs2[2].coef = 1.0/(hx*hx) * mult;
+		dofs2[3] = pint(2,i-1,j); dofs2[3].coef = 1.0/(hx*hx) * mult;
 		dofs2[4] = pint(2,i,j  ); dofs2[4].coef = 0.0;
 		for(int k = 0; k < 4; ++k) dofs2[4].coef -= dofs2[k].coef;
 		// Uh
-		dofs1[0] = pint(1,i,  j+1); dofs1[0].coef =  1.0/(hx*hx) * mult;
-		dofs1[1] = pint(1,i-1,j+1); dofs1[1].coef = -1.0/(hx*hx) * mult;
-		dofs1[2] = pint(1,i,j    ); dofs1[2].coef = -1.0/(hx*hx) * mult;
-		dofs1[3] = pint(1,i-1,j  ); dofs1[3].coef =  1.0/(hx*hx) * mult;
+		dofs1[0] = pint(1,i,  j+1); dofs1[0].coef =  1.0/(hx*hy) * mult;
+		dofs1[1] = pint(1,i-1,j+1); dofs1[1].coef = -1.0/(hx*hy) * mult;
+		dofs1[2] = pint(1,i,j    ); dofs1[2].coef = -1.0/(hx*hy) * mult;
+		dofs1[3] = pint(1,i-1,j  ); dofs1[3].coef =  1.0/(hx*hy) * mult;
 	}
 }
 
@@ -272,12 +250,12 @@ int div(int i, int j, pint * dofs1)
 int grad(int i, int j, int dir, pint * dofs3)
 {
 	// Ph
-	if(dir == 1)
+	if(dir == 1) // x
 	{
 		dofs3[0] = pint(3,i+1,j); dofs3[0].coef =  1.0 / hx;
 		dofs3[1] = pint(3,i,j  ); dofs3[1].coef = -1.0 / hx;
 	}
-	else
+	else //if(dir == 2) // y
 	{
 		dofs3[0] = pint(3,i,j+1); dofs3[0].coef =  1.0 / hy;
 		dofs3[1] = pint(3,i,j  ); dofs3[1].coef = -1.0 / hy;
@@ -296,9 +274,9 @@ int Dh(int grid, int comp, int i, int j, pint * dofs)
 		{
 			n = 2;
 			dofs[0] = pint(1,i,j);
-			dofs[1] = pint(1,i-1,j); h = dofs[1].inside() ? hx : hx/2;
-			dofs[0].coef =  1.0/h;
-			dofs[1].coef = -1.0/h;
+			dofs[1] = pint(1,i-1,j);
+			dofs[0].coef =  1.0/hx;
+			dofs[1].coef = -1.0/hx;
 			for(int q = 0; q < 2; ++q)
 				if(!dofs[q].inside() ) dofs[q].coef *= exact(1,dofs[q].x(),dofs[q].y());
 		}
@@ -306,9 +284,9 @@ int Dh(int grid, int comp, int i, int j, pint * dofs)
 		{
 			n = 2;
 			dofs[0] = pint(2,i,j);
-			dofs[1] = pint(2,i,j-1); h = dofs[1].inside() ? hy : hy/2;
-			dofs[0].coef =  1.0/h;
-			dofs[1].coef = -1.0/h;
+			dofs[1] = pint(2,i,j-1);
+			dofs[0].coef =  1.0/hy;
+			dofs[1].coef = -1.0/hy;
 			for(int q = 0; q < 2; ++q)
 				if(!dofs[q].inside() ) dofs[q].coef *= exact(2,dofs[q].x(),dofs[q].y());
 		}
@@ -400,7 +378,7 @@ int tauh(int grid, int comp, int i, int j, pint * dofs)
 // Frobenius norm of symmetric 2x2 matrix
 inline double frobnorm(double gamma[3])
 {
-	return sqrt(0.5)*sqrt(gamma[0]*gamma[0]+gamma[1]*gamma[1]+2*gamma[2]*gamma[2]);
+	return sqrt(gamma[0]*gamma[0]+gamma[1]*gamma[1]+2*gamma[2]*gamma[2]);
 }
 
 void update_gamma(const layout& lay1, const layout& lay2, double * gamma, const double * tau, const Sparse::Vector& x)
@@ -429,7 +407,6 @@ void update_gamma(const layout& lay1, const layout& lay2, double * gamma, const 
 	for(int i = 0; i < n1; ++i)
 		for(int j = 0; j < n2; ++j)
 	{
-		if(i == 0 || i == n1-1 || j == 0 || j == n2-1) continue;
 		double tau_ij[3] = {0,0,0}; //xx,yy,xy
 		for(int comp = 0; comp < 3; ++comp)
 		{
@@ -449,7 +426,8 @@ void update_tau(const layout& lay1, const layout& lay2, const double * gamma, co
 {
 	pint dofs[32];
 	int ndofs;
-	const double rn = r/2;//(1+sqrt(5))/2*r;
+	//const double rn = r/2;//(1+sqrt(5))/2*r;
+	const double rn = (1+sqrt(5))/2*r;
 	// grid 3, diagonal components
 	for(int i = 1; i < n1; ++i)
 		for(int j = 1; j < n2; ++j)
@@ -467,7 +445,6 @@ void update_tau(const layout& lay1, const layout& lay2, const double * gamma, co
 	for(int i = 0; i < n1; ++i)
 		for(int j = 0; j < n2; ++j)
 	{
-		if(i == 0 || i == n1-1 || j == 0 || j == n2-1) continue;
 		int m = lay2.dof(pint(4,i,j),2);
 		tau[m] = tau0[m] - 2*rn*gamma[m];
 		ndofs = Dh(4,2,i,j,dofs);
@@ -501,28 +478,28 @@ int div_tau(int comp, int i, int j, pint * dofs)
 	if(comp == 1) // x
 	{
 		// xx
-		dofs[0] = pint(3,i+1,j); h = dofs[0].inside() ? hx : hx/2;
+		dofs[0] = pint(3,i+1,j);
 		dofs[1] = pint(3,i  ,j);
-		dofs[0].coef =  1.0 / h;
-		dofs[1].coef = -1.0 / h;
+		dofs[0].coef =  1.0 / hx;
+		dofs[1].coef = -1.0 / hx;
 		// xy
 		dofs[2] = pint(4,i,j  );
-		dofs[3] = pint(4,i,j-1); h = dofs[3].inside() ? hy : hy/2;
-		dofs[2].coef =  1.0 / h;
-		dofs[3].coef = -1.0 / h;
+		dofs[3] = pint(4,i,j-1);
+		dofs[2].coef =  1.0 / hx;
+		dofs[3].coef = -1.0 / hx;
 	}
 	else //if(comp == 2) // y
 	{
 		// yy
-		dofs[0] = pint(3,i,j+1); h = dofs[0].inside() ? hy : hy/2;
+		dofs[0] = pint(3,i,j+1);
 		dofs[1] = pint(3,i,j  );
-		dofs[0].coef =  1.0 / h;
-		dofs[1].coef = -1.0 / h;
+		dofs[0].coef =  1.0 / hy;
+		dofs[1].coef = -1.0 / hy;
 		// xy
 		dofs[2] = pint(4,i  ,j);
-		dofs[3] = pint(4,i-1,j); h = dofs[3].inside() ? hx : hx/2;
-		dofs[2].coef =  1.0 / h;
-		dofs[3].coef = -1.0 / h;
+		dofs[3] = pint(4,i-1,j);
+		dofs[2].coef =  1.0 / hy;
+		dofs[3].coef = -1.0 / hy;
 	}
 	return 4;
 }
@@ -535,26 +512,26 @@ void fill_rhs(const layout& lay1, const layout& lay2, const double * gamma, cons
 	for(int i = 0; i < n1; ++i)
 		for(int j = 1; j < n2; ++j)
 	{
-		if(i == 0 || i == n1-1) continue;
 		int m = lay1.dof(pint(1,i,j),0);
 		ndofs = div_tau(1,i,j,dofs);
-		for(int q = 0; q < ndofs; ++q) if( dofs[q].inside() )
+		for(int q = 0; q < ndofs/2; ++q) if( dofs[2*q].inside() && dofs[2*q+1].inside() )
+		for(int k = 0; k < 2; ++k)
 		{
-			int d = lay2.dof(dofs[q],q < 2 ? 0 : 2);
-			b[m] += dofs[q].coef * (tau[d] - 2*r*gamma[d]) * scale;
+			int d = lay2.dof(dofs[2*q+k],2*q+k < 2 ? 0 : 2);
+			b[m] += dofs[2*q+k].coef * (tau[d] - 2*r*gamma[d]) * scale;
 		}
-	}
+}
 	// grid2
 	for(int j = 0; j < n2; ++j)
 		for(int i = 1; i < n1; ++i)
 	{
-		if(j == 0 || j == n2-1) continue;
 		int m = lay1.dof(pint(2,i,j),1);
 		ndofs = div_tau(2,i,j,dofs);
-		for(int q = 0; q < ndofs; ++q) if( dofs[q].inside() )
+		for(int q = 0; q < ndofs/2; ++q) if( dofs[2*q].inside() && dofs[2*q+1].inside() )
+		for(int k = 0; k < 2; ++k)
 		{
-			int d = lay2.dof(dofs[q],q < 2 ? 1 : 2);
-			b[m] += dofs[q].coef * (tau[d] - 2*r*gamma[d]) * scale;
+			int d = lay2.dof(dofs[2*q+k],2*q+k < 2 ? 1 : 2);
+			b[m] += dofs[2*q+k].coef * (tau[d] - 2*r*gamma[d]) * scale;
 		}
 	}
 }
@@ -593,10 +570,7 @@ void save_vtk(std::string filename, const layout& lay1, const layout& lay2, cons
 	{
 		double p = 0.0;
 		if(i > 0 && i < n1 && j > 0 && j < n2)
-		{
-			int k = lay1.dof(pint(3,i,j),2);
-			p = x[k];
-		}
+			p = x[lay1.dof(pint(3,i,j),2)];
 		ofs << p << '\n';
 	}
 	//divergence
@@ -615,32 +589,29 @@ void save_vtk(std::string filename, const layout& lay1, const layout& lay2, cons
 					divu += x[lay1.dof(dofs[q],dofs[q].grid-1)] * dofs[q].coef;
 				else
 					divu += exact(q < 2 ? 1 : 2, dofs[q].x(), dofs[q].y()) * dofs[q].coef;
-			int k = lay1.dof(pint(3,i,j),2);
 		}
 		ofs << divu << '\n';
 	}
-
-	// ofs << "CELL_DATA " << (n1*n2) << '\n';
-	// //velocity
-	// ofs << "VECTORS velocity double\n";
-	// for(int j = 0; j < n2; ++j)
-	// 	for(int i = 0; i < n1; ++i)
-	// {
-	// 	double u, v, w = 0.0;
-	// 	double u0, u1, v0, v1;
-	// 	pint dofs[4];
-	// 	dofs[0] = pint(1,i,j  );
-	// 	dofs[1] = pint(1,i,j+1);
-	// 	dofs[2] = pint(2,i+1,j);
-	// 	dofs[3] = pint(2,i,j  );
-	// 	for(int k = 0; k < 4; ++k)
-	// 		if(dofs[k].inside()) dofs[k].coef = x[lay1.dof(dofs[k], k < 2 ? 0 : 1)];
-	// 		else dofs[k].coef = exact(k < 2 ? 1 : 2, dofs[k].x(), dofs[k].y());
-	// 	u = 0.5*(dofs[0].coef+dofs[1].coef);
-	// 	v = 0.5*(dofs[2].coef+dofs[3].coef);
-	// 	ofs << u << ' ' << v << ' ' << w << '\n';
-	// }
-	// ofs << "VECTORS U double\n";
+	//frobenius norm of tau
+	ofs << "SCALARS frob_tau double 1\n";
+	ofs << "LOOKUP_TABLE default\n";
+	for(int j = 0; j < n2+1; ++j)
+		for(int i = 0; i < n1+1; ++i)
+	{
+		pint dofs[32];
+		double tau_ij[3] = {0,0,0}; //xx,yy,xy
+		if(i > 0 && i < n1 && j > 0 && j < n2)
+		{
+			for(int comp = 0; comp < 3; ++comp)
+			{
+				int ndofs = tauh(3,comp,i,j,dofs);
+				for(int q = 0; q < ndofs; ++q) if( dofs[q].inside() )
+					tau_ij[comp] += dofs[q].coef*( tau[lay2.dof(dofs[q],comp)] );
+			}
+		}
+		ofs << frobnorm(tau_ij) << '\n';
+	}
+	// u
 	ofs << "SCALARS U double 1\n";
 	ofs << "LOOKUP_TABLE default\n";
 	for(int j = 0; j < n2+1; ++j)
@@ -648,7 +619,6 @@ void save_vtk(std::string filename, const layout& lay1, const layout& lay2, cons
 	{
 		double u[2] = {0,0};
 		pint dofs[4];
-		// if(i > 0 && i < n1 && j > 0 && j < n2)
 		{
 			dofs[0] = pint(1,i,j  );
 			dofs[1] = pint(1,i-1,j);
@@ -656,18 +626,9 @@ void save_vtk(std::string filename, const layout& lay1, const layout& lay2, cons
 				if(dofs[k].inside()) u[k] = dofs[k].coef = x[lay1.dof(dofs[k], 0)];
 				else u[0] = u[1] = dofs[k].coef = exact(1, dofs[k].x(), dofs[k].y());
 		}
-		// dofs[0] = pint(1,i,j  );
-		// dofs[1] = pint(1,i,j+1);
-		// dofs[2] = pint(2,i+1,j);
-		// dofs[3] = pint(2,i,j  );
-		// for(int k = 0; k < 4; ++k)
-		// 	if(dofs[k].inside()) dofs[k].coef = x[lay1.dof(dofs[k], k < 2 ? 0 : 1)];
-		// 	else dofs[k].coef = exact(k < 2 ? 1 : 2, dofs[k].x(), dofs[k].y());
-		// u = dofs[0].coef;
-		// v = dofs[1].coef;
 		ofs << 0.5*(u[0]+u[1]) << '\n';
 	}
-	// ofs << "VECTORS V double\n";
+	// v
 	ofs << "SCALARS V double 1\n";
 	ofs << "LOOKUP_TABLE default\n";
 	for(int j = 0; j < n2+1; ++j)
@@ -675,7 +636,6 @@ void save_vtk(std::string filename, const layout& lay1, const layout& lay2, cons
 	{
 		double u[2] = {0,0};
 		pint dofs[4];
-		// if(i > 0 && i < n1 && j > 0 && j < n2)
 		{
 			dofs[0] = pint(2,i,j  );
 			dofs[1] = pint(2,i,j-1);
@@ -683,127 +643,24 @@ void save_vtk(std::string filename, const layout& lay1, const layout& lay2, cons
 				if(dofs[k].inside()) u[k] = dofs[k].coef = x[lay1.dof(dofs[k], 1)];
 				else u[0] = u[1] = dofs[k].coef = exact(2, dofs[k].x(), dofs[k].y());
 		}
-		// dofs[0] = pint(1,i,j  );
-		// dofs[1] = pint(1,i,j+1);
-		// dofs[2] = pint(2,i+1,j);
-		// dofs[3] = pint(2,i,j  );
-		// for(int k = 0; k < 4; ++k)
-		// 	if(dofs[k].inside()) dofs[k].coef = x[lay1.dof(dofs[k], k < 2 ? 0 : 1)];
-		// 	else dofs[k].coef = exact(k < 2 ? 1 : 2, dofs[k].x(), dofs[k].y());
-		// u = dofs[2].coef;
-		// v = dofs[3].coef;
 		ofs << 0.5*(u[0]+u[1]) << '\n';
 	}
 
 	ofs.close();
 }
 
-int main2(int argc, char ** argv)
-{
-	n1 = atoi(argv[1]);
-	n2 = n1;//argv[2];
-	hx = 1.0/n1;
-	hy = 1.0/n2;
-	r = 1;
-	test = 3;
-	double scale = hx*hy;
-
-	const int offset1[3] = {1,2,3};
-	const int offset2[3] = {3,3,4};
-	layout lay1(3,offset1), lay2(3,offset2);
-	
-	pint dofs1[5], dofs2[5];
-	for(int i = 0; i < n1; ++i)
-		for(int j = 1; j < n2; ++j)
-	{
-		pint k(1,i,j);
-		laplace(i,j,1,dofs1,dofs2, -r*scale);
-		std::cout << "i " << i << " j " << j << std::endl;
-		for(int q = 0; q < 5; ++q)
-			if( dofs1[q].inside() )
-				std::cout << "dof1 " << dofs1[q].dof() << " coef1 " << dofs1[q].coef << std::endl;
-			else
-				std::cout << "dof1 " << dofs1[q].dof() << " u(" << dofs1[q].x() << ", " << dofs1[q].y() << ") = " << exact(1,dofs1[q].x(),dofs1[q].y()) << std::endl;
-		for(int q = 0; q < 4; ++q)
-			if( dofs2[q].inside())
-				std::cout << "dof2 " << dofs2[q].dof() << " coef2 " << dofs2[q].coef << std::endl;
-			else
-				std::cout << "dof2 " << dofs2[q].dof() << " v(" << dofs2[q].x() << ", " << dofs2[q].y() << ") = " << exact(2,dofs2[q].x(),dofs2[q].y()) << std::endl;
-		std::cin.ignore();
-	}
-
-	return 0;
-}
-
-int main3()
-{
-	n1 = 5, n2 = 5;
-	hx = 1.0/n1;
-	hy = 1.0/n2;
-	test = 0;
-
-	const int offset1[3] = {1,2,3};
-	const int offset2[3] = {3,3,4};
-	layout lay1(3,offset1), lay2(3,offset2);
-	pint dofs1[5], dofs2[5], dofs3[5];
-	int ndofs;
-
-	std::cout << "n " << n1 << " h " << hx << std::endl;
-
-	for(int i = 0; i < n1; ++i)
-		for(int j = 1; j < n2; ++j)
-	{
-		int k = lay1.dof(pint(1,i,j), 0);
-		laplace(i,j,1,dofs1,dofs2, -1.0);
-
-		std::cout << "i " << i << " j " << j << std::endl;
-		for(int q = 0; q < 5; ++q)
-			if( !dofs1[q].inside() )
-			{
-				std::cout << "\tgrid " << dofs1[q].grid << " q " << q << " i " << dofs1[q].i << " j " << dofs1[q].j << " coef " << dofs1[q].coef;
-				std::cout << " x " << dofs1[q].x() << " y " << dofs1[q].y()
-					<< " u " << exact(1,dofs1[q].x(),dofs1[q].y()) << std::endl;
-				std::cin.ignore();
-			}
-		for(int q = 0; q < 4; ++q)
-			if( !dofs2[q].inside() )
-			{
-				std::cout << "\tgrid " << dofs2[q].grid << " q " << q << " i " << dofs2[q].i << " j " << dofs2[q].j << " coef " << dofs2[q].coef;
-				std::cout << " x " << dofs2[q].x() << " y " << dofs2[q].y()
-					<< " v " << exact(2,dofs2[q].x(),dofs2[q].y()) << std::endl;
-				std::cin.ignore();
-			}
-	}
-	for(int j = 0; j < n2; ++j)
-		for(int i = 1; i < n1; ++i)
-	{
-		int k = lay1.dof(pint(2,i,j), 1);
-		laplace(i,j,2,dofs1,dofs2, -r);
-
-		std::cout << "i " << i << " j " << j << std::endl;
-		for(int q = 0; q < 5; ++q)
-			if( !dofs2[q].inside() )
-			{
-				std::cout << "\tgrid " << dofs2[q].grid << " q " << q << " i " << dofs2[q].i << " j " << dofs2[q].j << " coef " << dofs2[q].coef;
-				std::cout << " x " << dofs2[q].x() << " y " << dofs2[q].y()
-					<< " v " << exact(2,dofs2[q].x(),dofs2[q].y()) << std::endl;
-				std::cin.ignore();
-			}
-		for(int q = 0; q < 4; ++q)
-			if( !dofs1[q].inside() )
-			{
-				std::cout << "\tgrid " << dofs1[q].grid << " q " << q << " i " << dofs1[q].i << " j " << dofs1[q].j << " coef " << dofs1[q].coef;
-				std::cout << " x " << dofs1[q].x() << " y " << dofs1[q].y()
-					<< " u " << exact(1,dofs1[q].x(),dofs1[q].y()) << std::endl;
-				std::cin.ignore();
-			}
-	}
-	return 0;
-}
-
 int main(int argc, char ** argv)
 {
 	Solver::Initialize(&argc, &argv, "database.xml");
+
+	if(argc < 2)
+	{
+		std::cout << "Usage: " << argv[0] << " n1 [test=" << test
+			<< "] [r=" << r << "] [tau_s=" << tau_s
+			<< "] [R1=" << R1 << "] [R2=" << R2
+			<< '\n';
+		return 0;
+	}
 	
 	n1 = atoi(argv[1]);
 	n2 = n1;//argv[2];
@@ -839,22 +696,17 @@ int main(int argc, char ** argv)
 	//std::cout << "check nstokes1 " << nstokes << " nstokes2 " << n1*(n2-1)+n2*(n1-1)+(n1-1)*(n2-1) << std::endl;
 
 	Sparse::Matrix A("stokes", 0, nstokes);
-	Sparse::Vector b("stokes", 0, nstokes), x("stokes", 0, nstokes), b0("stokes", 0, nstokes);
+	Sparse::Vector b("stokes", 0, nstokes), x("stokes", 0, nstokes), b0("stokes", 0, nstokes), x0("stokes", 0, nstokes);
 	std::fill(b0.Begin(),b0.End(),0.0);
 	// equations for velocity
 	pint dofs1[5], dofs2[5], dofs3[2];
 	int ndofs;
 	double scale = hx*hy;
-	// d2/dx2
+	// equations for Uh
 	for(int i = 0; i < n1; ++i)
 		for(int j = 1; j < n2; ++j)
 	{
 		int k = lay1.dof(pint(1,i,j), 0);
-		if(i == 0 || i == n1-1)
-		{
-			A[k][k] = 1.0; b0[k] = exact(1, i == 0 ? 0 : 1, j*hy);
-			continue;
-		}
 		laplace(i,j,1,dofs1,dofs2, -r);
 		b0[k] = rhs_exact(1,(i+0.5)*hx,j*hy) * scale;
 		for(int q = 0; q < 5; ++q)
@@ -862,25 +714,22 @@ int main(int argc, char ** argv)
 				A[k][lay1.dof(dofs1[q],dofs1[q].grid-1)] += dofs1[q].coef * scale;
 			else //if(test == 0)
 				b0[k] -= dofs1[q].coef * scale * exact(1,dofs1[q].x(),dofs1[q].y());
-		for(int q = 0; q < 4; ++q)
-			if( dofs2[q].inside() )
-				A[k][lay1.dof(dofs2[q],dofs2[q].grid-1)] += dofs2[q].coef * scale;
-			else //if(test == 0)
-				b0[k] -= dofs2[q].coef * scale * exact(2,dofs2[q].x(),dofs2[q].y());
+		if(divgrad) // \Delta_h = 2 div_h D_h instead of five-point Laplace:
+			for(int q = 0; q < 4; ++q)
+				if( dofs2[q].inside() )
+					A[k][lay1.dof(dofs2[q],dofs2[q].grid-1)] += dofs2[q].coef * scale;
+				else //if(test == 0)
+					b0[k] -= dofs2[q].coef * scale * exact(2,dofs2[q].x(),dofs2[q].y());
 		ndofs = grad(i,j,1,dofs3);
-		for(int q = 0; q < ndofs; ++q) if( dofs3[q].inside() )
-			A[k][lay1.dof(dofs3[q],dofs3[q].grid-1)] += dofs3[q].coef * scale;
+		if(i != 0 && i != n1-1) //skipping boundary gives BC dp/dx=0
+			for(int q = 0; q < ndofs; ++q) if( dofs3[q].inside() )
+				A[k][lay1.dof(dofs3[q],dofs3[q].grid-1)] += dofs3[q].coef * scale;
 	}
-	// d2/dy2
+	// equations for Vh
 	for(int j = 0; j < n2; ++j)
 		for(int i = 1; i < n1; ++i)
 	{
 		int k = lay1.dof(pint(2,i,j), 1);
-		if(j == 0 || j == n2-1)
-		{
-			A[k][k] = 1.0; b0[k] = exact(2, i*hx, j == 0 ? 0 : 1);
-			continue;
-		}
 		laplace(i,j,2,dofs1,dofs2, -r);
 		b0[k] = rhs_exact(2,i*hx,(j+0.5)*hy) * scale;
 		for(int q = 0; q < 5; ++q)
@@ -888,16 +737,18 @@ int main(int argc, char ** argv)
 				A[k][lay1.dof(dofs2[q],dofs2[q].grid-1)] += dofs2[q].coef * scale;
 			else //if(test == 0)
 				b0[k] -= dofs2[q].coef * scale * exact(2,dofs2[q].x(),dofs2[q].y());
-		for(int q = 0; q < 4; ++q)
-			if( dofs1[q].inside() )
-				A[k][lay1.dof(dofs1[q],dofs1[q].grid-1)] += dofs1[q].coef * scale;
-			else //if(test == 0)
-				b0[k] -= dofs1[q].coef * scale * exact(1,dofs1[q].x(),dofs1[q].y());
+		if(divgrad) // \Delta_h = 2 div_h D_h instead of five-point Laplace:
+			for(int q = 0; q < 4; ++q)
+				if( dofs1[q].inside() )
+					A[k][lay1.dof(dofs1[q],dofs1[q].grid-1)] += dofs1[q].coef * scale;
+				else //if(test == 0)
+					b0[k] -= dofs1[q].coef * scale * exact(1,dofs1[q].x(),dofs1[q].y());
 		ndofs = grad(i,j,2,dofs3);
-		for(int q = 0; q < ndofs; ++q) if( dofs3[q].inside() )
-			A[k][lay1.dof(dofs3[q],dofs3[q].grid-1)] += dofs3[q].coef * scale;
+		if(j != 0 && j != n2-1)//skipping boundary gives BC dp/dy=0
+			for(int q = 0; q < ndofs; ++q) if( dofs3[q].inside() )
+				A[k][lay1.dof(dofs3[q],dofs3[q].grid-1)] += dofs3[q].coef * scale;
 	}
-	// div u = 0
+	// div u = 0, equations for Ph
 	for(int i = 1; i < n1; ++i)
 		for(int j = 1; j < n2; ++j)
 	{
@@ -906,13 +757,13 @@ int main(int argc, char ** argv)
 		for(int q = 0; q < ndofs; ++q)
 			if( dofs1[q].inside() )
 				A[k][lay1.dof(dofs1[q],dofs1[q].grid-1)] += dofs1[q].coef * scale;
-			else if(0)//if(test == 0)
+			else //if(test == 0)
 				b0[k] -= dofs1[q].coef * scale * exact(q < 2 ? 1 : 2,dofs1[q].x(),dofs1[q].y());
 	}
 
 	A.Save("A.mtx");
 	b0.Save("b0.txt");
-	bool success = false;
+	bool success = false, finish = false;
 	double res = 0.0, atol = 1.0e-4;
 	int iter = 0, maxiters = 2000;
 	Solver S(Solver::INNER_ILU2, "test");
@@ -926,28 +777,36 @@ int main(int argc, char ** argv)
 		int iters = S.Iterations();
 		double resid = S.Residual();
 		std::string reason = S.ReturnReason();
+		std::cout << (!success ? "not " : "") << "converged iters " << iters << " resid " << resid << " reason " << reason << std::endl;
 		if(test)
+			finish = true;
+		else if(success)
 		{
-			std::cout << (!success ? "not " : "") << "converged iters " << iters << " resid " << resid << " reason " << reason << std::endl;
-		}
-		else
-		{
-			std::cout << (!success ? "not " : "") << "converged iters " << iters << " resid " << resid << " reason " << reason << std::endl;
-			update_gamma(lay1,lay2, gamma, tau0, x);
-			update_tau(lay1,lay2, gamma,tau0,tau,x);
-			res = residual(tau0,tau);
-			std::copy(tau,tau+ntau,tau0);
-			b.Save("b.txt");
+			update_gamma(lay1, lay2, gamma, tau0, x);
+			update_tau(lay1, lay2, gamma, tau0, tau, x);
+			res = residual(tau0, tau);
+			std::copy(tau, tau+ntau, tau0);
+			std::copy(x.Begin(), x.End(), x0.Begin());
 			std::cout << "iter " << iter << " " << " resid " << res << std::endl;
 			//std::cin.ignore();
 			++iter;
-			success = res < atol;
-			if(iter >= maxiters)
+			finish = res < atol;
+			if(iter >= maxiters || !success)
 			{
-				success = false;
+				finish = false;
 				break;
 			}
 		}
+		//x.Save("x.txt");
+		//b.Save("b.txt");
+	}
+	while(!finish);
+	//if(finish)
+	{
+		// save vtk
+		std::copy(x0.Begin(),x0.End(),x.Begin());
+		save_vtk("out.vtk", lay1, lay2, gamma, tau, x);
+		// save fields in txt to visualize using plot.py
 		{
 			std::ofstream ofs("x.txt");
 			ofs << n1 << ' ' << n2 << '\n';
@@ -955,74 +814,13 @@ int main(int argc, char ** argv)
 				ofs << std::scientific << x[q] << '\n';
 			ofs.close();
 		}
-		//x.Save("x.txt");
-	}
-	while(!success);
-	//if(success)
-	{
-		double errUV_L2 = 0.0, errP_L2 = 0.0;
-		double errUV_C = 0.0, errP_C = 0.0;
-		double xyUV[2], xyP[2];
-		double err;
-		for(int i = 0; i < n1; ++i)
-			for(int j = 1; j < n2; ++j)
-		{
-			int k = lay1.dof(pint(1,i,j),0);
-			b[k] = exact(1,(i+0.5)*hx,j*hy);
-			err = fabs( b[k] - x[k] );
-			if(errUV_C < err)
-			{
-				errUV_C = err;
-				xyUV[0] = (i+0.5)*hx;
-				xyUV[1] = j*hy;
-			}
-			errUV_L2 += err*err * hx*hy;
-			//x[k] = err;
-		}
-		for(int j = 0; j < n2; ++j)
-			for(int i = 1; i < n1; ++i)
-		{
-			int k = lay1.dof(pint(2,i,j),1);
-			b[k] = exact(2,i*hx,(j+0.5)*hy);
-			err = fabs( b[k] - x[k] );
-			if(errUV_C < err)
-			{
-				errUV_C = err;
-				xyUV[0] = i*hx;
-				xyUV[1] = (j+0.5)*hy;
-			}
-			errUV_L2 += err*err * hx*hy;
-			//x[k] = err;
-		}
-		for(int i = 1; i < n1; ++i)
-			for(int j = 1; j < n2; ++j)
-		{
-			int k = lay1.dof(pint(3,i,j),2);
-			b[k] = exact(3,i*hx,j*hy);
-			err = fabs( b[k] - x[k] );
-			if(errP_C < err)
-			{
-				errP_C = err;
-				xyP[0] = i*hx;
-				xyP[1] = j*hy;
-			}
-			errP_L2 += err*err * hx*hy;
-			//x[k] = err;
-		}
-		errUV_L2 = sqrt(errUV_L2);
-		errP_L2 = sqrt(errP_L2);
-		std::cout << "|eh| " << errUV_L2 << " |rh| " << errP_L2 << " |eh|_C " << errUV_C << " at (" << xyUV[0] << " " << xyUV[1] << ") |rh|_C " << errP_C << " at (" << xyP[0] << " " << xyP[1] << ")" << std::endl;
-		b.Save("exact.txt");
-		//x.Save("err.txt");
-
 		std::ofstream ofs1("tau.txt");
 		std::ofstream ofs2("gamma.txt");
 		pint dofs[32];
 		for(int i = 1; i < n1; ++i)
 			for(int j = 1; j < n2; ++j)
 		{
-			double tau_ij[3] = {0,0,0}; //xx,yy,xy
-			double gamma_ij[3] = {0,0,0}; //xx,yy,xy
+			double tau_ij[3] = {0,0,0}, gamma_ij[3] = {0,0,0}; //xx,yy,xy
 			for(int comp = 0; comp < 3; ++comp)
 			{
 				ndofs = Dh(3,comp,i,j,dofs);
@@ -1035,14 +833,6 @@ int main(int argc, char ** argv)
 					tau_ij[comp] += dofs[q].coef*( tau0[lay2.dof(dofs[q],comp)] );
 				}
 			}
-			if(0)
-			{
-				ndofs = div(i,j,dofs);
-				tau_ij[0] = 0.0;
-				for(int q = 0; q < ndofs; ++q)
-					if( dofs[q].inside() )
-						tau_ij[0] += x[lay1.dof(dofs[q],dofs[q].grid-1)]*dofs[q].coef;
-			}
 			double fnorm1 = frobnorm(tau_ij)+1.0e-10;
 			ofs1 << fnorm1  << " "<< tau_ij[0] << " " << tau_ij[1] << " " << tau_ij[2] << "\n";
 			double fnorm2 = frobnorm(gamma_ij)+1.0e-10;
@@ -1051,7 +841,60 @@ int main(int argc, char ** argv)
 		ofs1.close();
 		ofs2.close();
 
-		save_vtk("out.vtk", lay1, lay2, gamma, tau, x);
+		// compute errors for analytical test
+		if(test != 0)
+		{
+			double errUV_L2 = 0.0, errP_L2 = 0.0;
+			double errUV_C = 0.0, errP_C = 0.0;
+			double xyUV[2], xyP[2];
+			double err;
+			for(int i = 0; i < n1; ++i)
+				for(int j = 1; j < n2; ++j)
+			{
+				int k = lay1.dof(pint(1,i,j),0);
+				b[k] = exact(1,(i+0.5)*hx,j*hy);
+				err = fabs( b[k] - x[k] );
+				if(errUV_C < err)
+				{
+					errUV_C = err;
+					xyUV[0] = (i+0.5)*hx;
+					xyUV[1] = j*hy;
+				}
+				errUV_L2 += err*err * hx*hy;
+			}
+			for(int j = 0; j < n2; ++j)
+				for(int i = 1; i < n1; ++i)
+			{
+				int k = lay1.dof(pint(2,i,j),1);
+				b[k] = exact(2,i*hx,(j+0.5)*hy);
+				err = fabs( b[k] - x[k] );
+				if(errUV_C < err)
+				{
+					errUV_C = err;
+					xyUV[0] = i*hx;
+					xyUV[1] = (j+0.5)*hy;
+				}
+				errUV_L2 += err*err * hx*hy;
+			}
+			for(int i = 1; i < n1; ++i)
+				for(int j = 1; j < n2; ++j)
+			{
+				int k = lay1.dof(pint(3,i,j),2);
+				b[k] = exact(3,i*hx,j*hy);
+				err = fabs( b[k] - x[k] );
+				if(errP_C < err)
+				{
+					errP_C = err;
+					xyP[0] = i*hx;
+					xyP[1] = j*hy;
+				}
+				errP_L2 += err*err * hx*hy;
+			}
+			errUV_L2 = sqrt(errUV_L2);
+			errP_L2 = sqrt(errP_L2);
+			std::cout << "|eh| " << errUV_L2 << " |rh| " << errP_L2 << " |eh|_C " << errUV_C << " at (" << xyUV[0] << " " << xyUV[1] << ") |rh|_C " << errP_C << " at (" << xyP[0] << " " << xyP[1] << ")" << std::endl;
+			b.Save("exact.txt");
+		}
 	}
 
 	delete[] gamma;
