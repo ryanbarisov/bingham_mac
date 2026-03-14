@@ -658,7 +658,7 @@ int main(int argc, char ** argv)
 		std::cout << "Usage: " << argv[0] << " n1 [test=" << test
 			<< "] [r=" << r << "] [tau_s=" << tau_s
 			<< "] [R1=" << R1 << "] [R2=" << R2
-			<< '\n';
+			<< "]\n";
 		return 0;
 	}
 	
@@ -721,7 +721,7 @@ int main(int argc, char ** argv)
 				else //if(test == 0)
 					b0[k] -= dofs2[q].coef * scale * exact(2,dofs2[q].x(),dofs2[q].y());
 		ndofs = grad(i,j,1,dofs3);
-		if(i != 0 && i != n1-1) //skipping boundary gives BC dp/dx=0
+		if(test != 0 || (i != 0 && i != n1-1)) //skipping boundary gives BC dp/dx=0 (test = 0), some analytics may have dp/dx != 0
 			for(int q = 0; q < ndofs; ++q) if( dofs3[q].inside() )
 				A[k][lay1.dof(dofs3[q],dofs3[q].grid-1)] += dofs3[q].coef * scale;
 	}
@@ -744,7 +744,7 @@ int main(int argc, char ** argv)
 				else //if(test == 0)
 					b0[k] -= dofs1[q].coef * scale * exact(1,dofs1[q].x(),dofs1[q].y());
 		ndofs = grad(i,j,2,dofs3);
-		if(j != 0 && j != n2-1)//skipping boundary gives BC dp/dy=0
+		if(test != 0 || (j != 0 && j != n2-1))//skipping boundary gives BC dp/dy=0 (test = 0), some analytics may have dp/dy != 0
 			for(int q = 0; q < ndofs; ++q) if( dofs3[q].inside() )
 				A[k][lay1.dof(dofs3[q],dofs3[q].grid-1)] += dofs3[q].coef * scale;
 	}
@@ -778,6 +778,7 @@ int main(int argc, char ** argv)
 		double resid = S.Residual();
 		std::string reason = S.ReturnReason();
 		std::cout << (!success ? "not " : "") << "converged iters " << iters << " resid " << resid << " reason " << reason << std::endl;
+		std::copy(x.Begin(), x.End(), x0.Begin());
 		if(test)
 			finish = true;
 		else if(success)
@@ -786,7 +787,6 @@ int main(int argc, char ** argv)
 			update_tau(lay1, lay2, gamma, tau0, tau, x);
 			res = residual(tau0, tau);
 			std::copy(tau, tau+ntau, tau0);
-			std::copy(x.Begin(), x.End(), x0.Begin());
 			std::cout << "iter " << iter << " " << " resid " << res << std::endl;
 			//std::cin.ignore();
 			++iter;
@@ -892,7 +892,7 @@ int main(int argc, char ** argv)
 			}
 			errUV_L2 = sqrt(errUV_L2);
 			errP_L2 = sqrt(errP_L2);
-			std::cout << "|eh| " << errUV_L2 << " |rh| " << errP_L2 << " |eh|_C " << errUV_C << " at (" << xyUV[0] << " " << xyUV[1] << ") |rh|_C " << errP_C << " at (" << xyP[0] << " " << xyP[1] << ")" << std::endl;
+			std::cout << "l2err(UV) " << errUV_L2 << " l2err(P) " << errP_L2 << " Cerr(UV) " << errUV_C << " at (" << xyUV[0] << " " << xyUV[1] << ") Cerr(P) " << errP_C << " at (" << xyP[0] << " " << xyP[1] << ")" << std::endl;
 			b.Save("exact.txt");
 		}
 	}
