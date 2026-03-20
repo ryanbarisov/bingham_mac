@@ -8,5 +8,8 @@ if(inmost_FOUND)
 	include_directories("${INMOST_INCLUDE_DIRS}")
 endif()
 
-add_executable(main main.cpp)
+add_executable(main main.cpp analytics.cpp)
 target_link_libraries(main ${INMOST_LIBRARIES})
+
+add_executable(cavity cavity.cpp analytics.cpp)
+target_link_libraries(cavity ${INMOST_LIBRARIES})
