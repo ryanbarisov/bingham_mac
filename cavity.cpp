@@ -9,7 +9,7 @@
 #include <array>
 #include "analytics.h"
 
-#define USE_S3M
+//#define USE_S3M
 
 #if defined(USE_S3M)
 #include "s3m/csrmatrix.h"
@@ -950,6 +950,156 @@ int main2()
 	return 0;
 }
 
+#if defined(USE_S3M)
+typedef CSRMatrix matrix_type;
+#else
+typedef Sparse::Matrix matrix_type;
+#endif
+
+// fill matrix corresponding to Stokes equations for U,V,P
+// -mu \Delta u + \grad p = f
+// div u = 0
+void fill_stokes(dof_vector<double>& RHS0, matrix_type& A, const layout& lay1, double scale, bool filled)
+{
+	std::fill(RHS0.U.begin(),RHS0.U.end(),0.0);
+	// equations for velocity
+	pint dofs1[5], dofs2[5], dofs3[2];
+	int ndofs;
+	// equations for Uh
+	for(int i = 0; i < n1; ++i)
+		for(int j = 1; j < n2; ++j)
+	{
+		int k = lay1.dof(pint(1,i,j), 0);
+		laplace(i,j,1,dofs1,dofs2, -mu_s);
+		RHS0[k] = rhs_exact(test, 1,(i+0.5)*hx,j*hy) * scale;
+		for(int q = 0; q < 5; ++q)
+			if( dofs1[q].inside() )
+			{
+				if(!filled)
+				{
+#if defined(USE_S3M)
+					A.PushBack(lay1.dof(dofs1[q],dofs1[q].grid-1), dofs1[q].coef * scale);
+#else
+					A[k][lay1.dof(dofs1[q],dofs1[q].grid-1)] += dofs1[q].coef * scale;
+#endif
+				}
+			}
+			else //if(test == 0)
+				RHS0[k] -= dofs1[q].coef * scale * exact(test, 1,dofs1[q].x(),dofs1[q].y());
+		if(divgrad) // \Delta_h = 2 div_h D_h instead of five-point Laplace:
+			for(int q = 0; q < 4; ++q)
+				if( dofs2[q].inside() )
+				{
+					if(!filled)
+					{
+#if defined(USE_S3M)
+						A.PushBack(lay1.dof(dofs2[q],dofs2[q].grid-1), dofs2[q].coef * scale);
+#else
+						A[k][lay1.dof(dofs2[q],dofs2[q].grid-1)] += dofs2[q].coef * scale;
+#endif
+					}
+				}
+				else //if(test == 0)
+					RHS0[k] -= dofs2[q].coef * scale * exact(test, 2,dofs2[q].x(),dofs2[q].y());
+		ndofs = grad(i,j,1,dofs3);
+		if(test != 0 || (i != 0 && i != n1-1)) //skipping boundary gives BC dp/dx=0 (test = 0), some analytics may have dp/dx != 0
+			for(int q = 0; q < ndofs; ++q) if( dofs3[q].inside() )
+				if(!filled)
+				{
+#if defined(USE_S3M)
+					A.PushBack(lay1.dof(dofs3[q],dofs3[q].grid-1), dofs3[q].coef * scale);
+#else
+					A[k][lay1.dof(dofs3[q],dofs3[q].grid-1)] += dofs3[q].coef * scale;
+#endif
+				}
+#if defined(USE_S3M)
+		if(!filled) A.FinalizeRow();
+#endif
+	}
+	// equations for Vh
+	for(int j = 0; j < n2; ++j)
+		for(int i = 1; i < n1; ++i)
+	{
+		int k = lay1.dof(pint(2,i,j), 1);
+		laplace(i,j,2,dofs1,dofs2, -mu_s);
+		RHS0[k] = rhs_exact(test, 2,i*hx,(j+0.5)*hy) * scale;
+		for(int q = 0; q < 5; ++q)
+			if( dofs2[q].inside() )
+			{
+				if(!filled)
+				{
+#if defined(USE_S3M)
+					A.PushBack(lay1.dof(dofs2[q],dofs2[q].grid-1), dofs2[q].coef * scale);
+#else
+					A[k][lay1.dof(dofs2[q],dofs2[q].grid-1)] += dofs2[q].coef * scale;
+#endif
+				}
+
+			}
+			else //if(test == 0)
+				RHS0[k] -= dofs2[q].coef * scale * exact(test, 2,dofs2[q].x(),dofs2[q].y());
+		if(divgrad) // \Delta_h = 2 div_h D_h instead of five-point Laplace:
+			for(int q = 0; q < 4; ++q)
+				if( dofs1[q].inside() )
+				{
+					if(!filled)
+					{
+#if defined(USE_S3M)
+						A.PushBack(lay1.dof(dofs1[q],dofs1[q].grid-1), dofs1[q].coef * scale);
+#else
+						A[k][lay1.dof(dofs1[q],dofs1[q].grid-1)] += dofs1[q].coef * scale;
+#endif
+					}
+				}
+				else //if(test == 0)
+					RHS0[k] -= dofs1[q].coef * scale * exact(test, 1,dofs1[q].x(),dofs1[q].y());
+		ndofs = grad(i,j,2,dofs3);
+		if(test != 0 || (j != 0 && j != n2-1))//skipping boundary gives BC dp/dy=0 (test = 0), some analytics may have dp/dy != 0
+			for(int q = 0; q < ndofs; ++q) if( dofs3[q].inside() )
+				if(!filled)
+				{
+#if defined(USE_S3M)
+					A.PushBack(lay1.dof(dofs3[q],dofs3[q].grid-1), dofs3[q].coef * scale);
+#else
+					A[k][lay1.dof(dofs3[q],dofs3[q].grid-1)] += dofs3[q].coef * scale;
+#endif
+				}
+#if defined(USE_S3M)
+		if(!filled) A.FinalizeRow();
+#endif
+	}
+	// div u = 0, equations for Ph
+	for(int i = 1; i < n1; ++i)
+		for(int j = 1; j < n2; ++j)
+	{
+		int k = lay1.dof(pint(3,i,j), 2);
+		ndofs = div(i,j,dofs1);
+		/*if(integral_constraint && !filled)
+		{
+			A[k][nstokes-1] = scale;
+			A[nstokes-1][k] = scale;
+		}*/
+		for(int q = 0; q < ndofs; ++q)
+			if( dofs1[q].inside() )
+			{
+				if(!filled)
+				{
+#if defined(USE_S3M)
+					A.PushBack(lay1.dof(dofs1[q],dofs1[q].grid-1), dofs1[q].coef * scale);
+#else
+					A[k][lay1.dof(dofs1[q],dofs1[q].grid-1)] += dofs1[q].coef * scale;
+#endif
+				}
+			}
+			else //if(test == 0)
+				RHS0[k] -= dofs1[q].coef * scale * exact(test, q < 2 ? 1 : 2,dofs1[q].x(),dofs1[q].y());
+#if defined(USE_S3M)
+		if(!filled) A.FinalizeRow();
+#endif
+	}
+}
+
+
 int main(int argc, char ** argv)
 {
 #if !defined(USE_S3M)
@@ -1016,143 +1166,8 @@ int main(int argc, char ** argv)
 #endif	
 	do
 	{
-		std::fill(RHS0.U.begin(),RHS0.U.end(),0.0);
-		// equations for velocity
-		pint dofs1[5], dofs2[5], dofs3[2];
-		int ndofs;
 		double scale = hx*hy;
-		// equations for Uh
-		for(int i = 0; i < n1; ++i)
-			for(int j = 1; j < n2; ++j)
-		{
-			int k = lay1.dof(pint(1,i,j), 0);
-			laplace(i,j,1,dofs1,dofs2, -mu_s);
-			RHS0[k] = rhs_exact(test, 1,(i+0.5)*hx,j*hy) * scale;
-			for(int q = 0; q < 5; ++q)
-				if( dofs1[q].inside() )
-				{
-					if(!filled)
-					{
-#if defined(USE_S3M)
-						A.PushBack(lay1.dof(dofs1[q],dofs1[q].grid-1), dofs1[q].coef * scale);
-#else
-						A[k][lay1.dof(dofs1[q],dofs1[q].grid-1)] += dofs1[q].coef * scale;
-#endif
-					}
-				}
-				else //if(test == 0)
-					RHS0[k] -= dofs1[q].coef * scale * exact(test, 1,dofs1[q].x(),dofs1[q].y());
-			if(divgrad) // \Delta_h = 2 div_h D_h instead of five-point Laplace:
-				for(int q = 0; q < 4; ++q)
-					if( dofs2[q].inside() )
-					{
-						if(!filled)
-						{
-#if defined(USE_S3M)
-							A.PushBack(lay1.dof(dofs2[q],dofs2[q].grid-1), dofs2[q].coef * scale);
-#else
-							A[k][lay1.dof(dofs2[q],dofs2[q].grid-1)] += dofs2[q].coef * scale;
-#endif
-						}
-					}
-					else //if(test == 0)
-						RHS0[k] -= dofs2[q].coef * scale * exact(test, 2,dofs2[q].x(),dofs2[q].y());
-			ndofs = grad(i,j,1,dofs3);
-			if(test != 0 || (i != 0 && i != n1-1)) //skipping boundary gives BC dp/dx=0 (test = 0), some analytics may have dp/dx != 0
-				for(int q = 0; q < ndofs; ++q) if( dofs3[q].inside() )
-					if(!filled)
-					{
-#if defined(USE_S3M)
-						A.PushBack(lay1.dof(dofs3[q],dofs3[q].grid-1), dofs3[q].coef * scale);
-#else
-						A[k][lay1.dof(dofs3[q],dofs3[q].grid-1)] += dofs3[q].coef * scale;
-#endif
-					}
-#if defined(USE_S3M)
-			if(!filled) A.FinalizeRow();
-#endif
-		}
-		// equations for Vh
-		for(int j = 0; j < n2; ++j)
-			for(int i = 1; i < n1; ++i)
-		{
-			int k = lay1.dof(pint(2,i,j), 1);
-			laplace(i,j,2,dofs1,dofs2, -mu_s);
-			RHS0[k] = rhs_exact(test, 2,i*hx,(j+0.5)*hy) * scale;
-			for(int q = 0; q < 5; ++q)
-				if( dofs2[q].inside() )
-				{
-					if(!filled)
-					{
-#if defined(USE_S3M)
-						A.PushBack(lay1.dof(dofs2[q],dofs2[q].grid-1), dofs2[q].coef * scale);
-#else
-						A[k][lay1.dof(dofs2[q],dofs2[q].grid-1)] += dofs2[q].coef * scale;
-#endif
-					}
-
-				}
-				else //if(test == 0)
-					RHS0[k] -= dofs2[q].coef * scale * exact(test, 2,dofs2[q].x(),dofs2[q].y());
-			if(divgrad) // \Delta_h = 2 div_h D_h instead of five-point Laplace:
-				for(int q = 0; q < 4; ++q)
-					if( dofs1[q].inside() )
-					{
-						if(!filled)
-						{
-#if defined(USE_S3M)
-							A.PushBack(lay1.dof(dofs1[q],dofs1[q].grid-1), dofs1[q].coef * scale);
-#else
-							A[k][lay1.dof(dofs1[q],dofs1[q].grid-1)] += dofs1[q].coef * scale;
-#endif
-						}
-					}
-					else //if(test == 0)
-						RHS0[k] -= dofs1[q].coef * scale * exact(test, 1,dofs1[q].x(),dofs1[q].y());
-			ndofs = grad(i,j,2,dofs3);
-			if(test != 0 || (j != 0 && j != n2-1))//skipping boundary gives BC dp/dy=0 (test = 0), some analytics may have dp/dy != 0
-				for(int q = 0; q < ndofs; ++q) if( dofs3[q].inside() )
-					if(!filled)
-					{
-#if defined(USE_S3M)
-						A.PushBack(lay1.dof(dofs3[q],dofs3[q].grid-1), dofs3[q].coef * scale);
-#else
-						A[k][lay1.dof(dofs3[q],dofs3[q].grid-1)] += dofs3[q].coef * scale;
-#endif
-					}
-#if defined(USE_S3M)
-			if(!filled) A.FinalizeRow();
-#endif
-		}
-		// div u = 0, equations for Ph
-		for(int i = 1; i < n1; ++i)
-			for(int j = 1; j < n2; ++j)
-		{
-			int k = lay1.dof(pint(3,i,j), 2);
-			ndofs = div(i,j,dofs1);
-			/*if(integral_constraint && !filled)
-			{
-				A[k][nstokes-1] = scale;
-				A[nstokes-1][k] = scale;
-			}*/
-			for(int q = 0; q < ndofs; ++q)
-				if( dofs1[q].inside() )
-				{
-					if(!filled)
-					{
-#if defined(USE_S3M)
-						A.PushBack(lay1.dof(dofs1[q],dofs1[q].grid-1), dofs1[q].coef * scale);
-#else
-						A[k][lay1.dof(dofs1[q],dofs1[q].grid-1)] += dofs1[q].coef * scale;
-#endif
-					}
-				}
-				else //if(test == 0)
-					RHS0[k] -= dofs1[q].coef * scale * exact(test, q < 2 ? 1 : 2,dofs1[q].x(),dofs1[q].y());
-#if defined(USE_S3M)
-			if(!filled) A.FinalizeRow();
-#endif
-		}
+		fill_stokes(RHS0, A, lay1, scale, filled);
 		if(!filled)
 		{
 #if defined(USE_S3M)
@@ -1195,7 +1210,7 @@ int main(int argc, char ** argv)
 			//update_psi(lay1, x, x0, PSI, PSI0, PSI1);
 			update_psi(lay1, UVP, UVP0, PSI, PSI0, PSI1);
 			//std::copy(UVP.U.begin(), UVP.U.end(), UVP0.U.begin());
-			UVP = UVP0;
+			UVP0 = UVP;
 			//update_tau(lay1, PSI, TAU1, TAU);
 			update_tau(lay1, PSI, TAU1, TAU);
 			res = residual(TAU0, TAU);
