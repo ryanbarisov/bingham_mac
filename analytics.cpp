@@ -54,8 +54,9 @@ double rhs_exact(int test, int grid, double x, double y)
 	{
 		if(grid == 1) // Uh
 			return -mu_s*( 2*cos(2*M_PI*x)-1)*sin(2*M_PI*y) + 2*cos(2*M_PI*x)*sin(2*M_PI*y);
-		else //if(grid == 2) // Vh
+		else if(grid == 2) // Vh
 			return -mu_s*(-2*cos(2*M_PI*y)+1)*sin(2*M_PI*x) + 2*cos(2*M_PI*y)*sin(2*M_PI*x);
+		else return 0.0;
 	}
 	else // if(test == 0)
 	{

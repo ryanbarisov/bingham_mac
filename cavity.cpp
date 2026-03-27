@@ -42,7 +42,7 @@ int nframe = 10;
 int test = 0; // 0 -- regularized cavity, 1,2 -- analytical tests for Stokes problem alone
 
 bool divgrad = false; // Delta_h = 2 div_h D_h (true), standard five-point Laplace (false)
-
+bool integral_constraint = true; // integral constraint on pressure
 
 // DOF on staggered grid
 typedef struct pint
@@ -50,8 +50,7 @@ typedef struct pint
 	int i, j;
 	double coef = 0.0;
 	int grid; // 1(Uh), 2(Vh), 3(Ph), 4(Qh)
-	int ncomps = 1;
-	pint(int grid = -1, int i = -10, int j = -10, int ncomps = 1) : i(i), j(j), grid(grid), ncomps(ncomps) {}
+	pint(int grid = -1, int i = -10, int j = -10) : i(i), j(j), grid(grid) {}
 	static int nx(int grid) // amount of unknowns in X direction
 	{
 		if(grid == 1) return n1;
@@ -70,13 +69,13 @@ typedef struct pint
 	int dof() const
 	{
 		if(grid == 1) // Uh
-			return ncomps*(i*ny(grid) + (j-1));
+			return i*ny(grid) + (j-1);
 		if(grid == 2) // Vh
-			return ncomps*(j*nx(grid) + (i-1));
+			return j*nx(grid) + (i-1);
 		else if(grid == 3) // Ph
-			return ncomps*((i-1)*ny(grid) + (j-1));
+			return (i-1)*ny(grid) + (j-1);
 		else // if(grid == 4) // Qh
-			return ncomps*(i*ny(grid) + j);
+			return i*ny(grid) + j;
 	}
 	bool inside() const
 	{
@@ -128,6 +127,7 @@ struct layout
 		memcpy(ncomps,other.ncomps,sizeof(int)*N);
 		memcpy(offsets,other.offsets,sizeof(int)*(N+1));
 	}
+	int size() const { return offsets[N]; }
 	~layout()
 	{
 		delete[] grids;
@@ -141,8 +141,7 @@ struct layout
 	}
 	int dof(const pint& p, int pos) const
 	{
-		if(p.ncomps != ncomps[pos]) throw "inconsistent amount of DOF components: pint::ncomps vs. layout.ncomps";
-		if(p.inside()) return offset(pos) + p.dof();
+		if(p.inside()) return offset(pos) + ncomps[pos]*p.dof();
 		throw "trying to access outside DOF";
 		return -1;
 	}
@@ -159,19 +158,29 @@ struct dof_vector
 		int N = lay->offset(lay->N);
 		U.resize(N);
 	}
-	//dof_vector(const dof_vector& other) : lay(other.lay), U(other.U) {}
 
-	int ndofs() const {return lay->offset(lay->N);}
+	int size() const {return lay->size();}
+
+	unsigned index(int igrid, int i, int j) const
+	{
+		return lay->dof(pint(lay->grids[igrid],i,j), igrid);
+	}
 	T& operator()(int igrid, int i, int j)
 	{
-		return U[lay->dof(pint(lay->grids[igrid],i,j,lay->ncomps[igrid]), igrid)];
+		return U[index(igrid, i, j)];
 	}
 	const T& operator()(int igrid, int i, int j) const
 	{
-		return U[lay->dof(pint(lay->grids[igrid],i,j,lay->ncomps[igrid]), igrid)];
+		return U[index(igrid, i, j)];
 	}
-	T& operator[](unsigned pos) {return U[pos];}
-	const T& operator[](unsigned pos) const {return U[pos];}
+	T& operator()(int igrid, const pint& p)
+	{
+		return operator()(igrid, p.i, p.j);
+	}
+	const T& operator()(int igrid, const pint& p) const
+	{
+		return operator()(igrid, p.i, p.j);
+	}
 };
 
 // (0 2)
@@ -385,7 +394,7 @@ double minmod(double a, double b) {return 0.5*((2*(a>0)-1)+(2*(b>0)-1)) * std::m
 
 // dir: +x -x +y -y
 //       0  1  2  3
-void reconstruct(dof_vector<symmat2>& psi, int i, int j, symmat2& PSI_PLUS, symmat2& PSI_MINUS, int dir)
+void reconstruct(const dof_vector<symmat2>& psi, int i, int j, symmat2& PSI_PLUS, symmat2& PSI_MINUS, int dir)
 {
 	if(dir < 0 || dir >= 4) throw "invalid direction, see reconstruct function";
 	int iLL = i, iL = i, iR = i, iRR = i;
@@ -399,7 +408,7 @@ void reconstruct(dof_vector<symmat2>& psi, int i, int j, symmat2& PSI_PLUS, symm
 		dir -= 2;
 		jLL = j-dir-1; jL = j-dir; jR = j-dir+1; jRR = j-dir+2;
 	}
-	pint pLL = pint(3,iLL,jLL,3), pL = pint(3,iL,jL,3), pR = pint(3,iR,jR,3), pRR = pint(3,iRR,jRR,3);
+	pint pLL = pint(3,iLL,jLL), pL = pint(3,iL,jL), pR = pint(3,iR,jR), pRR = pint(3,iRR,jRR);
 
 	if(!pL.inside() || !pR.inside())
 	{
@@ -430,7 +439,7 @@ void reconstruct(dof_vector<symmat2>& psi, int i, int j, symmat2& PSI_PLUS, symm
 	}
 }
 
-void flux_advection(const layout& lay1, dof_vector<symmat2>& psi, const dof_vector<double>& x, int i, int j, symmat2& Nc)
+void flux_advection(const dof_vector<symmat2>& psi, const dof_vector<double>& x, int i, int j, symmat2& Nc)
 {
 	const double c = 0.5; // smoothing factor
 	symmat2 PSI_PLUS, PSI_MINUS, H1, H0;
@@ -438,22 +447,22 @@ void flux_advection(const layout& lay1, dof_vector<symmat2>& psi, const dof_vect
 
 	Nc[0] = Nc[1] = Nc[2] = 0.0;
 	reconstruct(psi, i, j, PSI_PLUS, PSI_MINUS, 0); // +x
-	u1 = x[lay1.dof(pint(1,i,j), 0)];
+	u1 = x(0,i,j);
 	for(int q = 0; q < 3; ++q)
 		H1[q] = u1*0.5*(PSI_PLUS[q]+PSI_MINUS[q]) - c * fabs(u1)*(PSI_PLUS[q] - PSI_MINUS[q]);
 	reconstruct(psi, i, j, PSI_PLUS, PSI_MINUS, 1); // -x
-	u0 = x[lay1.dof(pint(1,i-1,j), 0)];
+	u0 = x(0,i-1,j);
 	for(int q = 0; q < 3; ++q)
 		H0[q] = u0*0.5*(PSI_PLUS[q]+PSI_MINUS[q]) - c * fabs(u0)*(PSI_PLUS[q] - PSI_MINUS[q]);
 	for(int q = 0; q < 3; ++q)
 		Nc[q] += (H1[q]-H0[q])/hx;
 
 	reconstruct(psi, i, j, PSI_PLUS, PSI_MINUS, 2); // +y
-	v1 = x[lay1.dof(pint(2,i,j), 1)];
+	v1 = x(1,i,j);
 	for(int q = 0; q < 3; ++q)
 		H1[q] = v1*0.5*(PSI_PLUS[q]+PSI_MINUS[q]) - c * fabs(v1)*(PSI_PLUS[q] - PSI_MINUS[q]);
 	reconstruct(psi, i, j, PSI_PLUS, PSI_MINUS, 3); // -y
-	v0 = x[lay1.dof(pint(2,i,j-1), 1)];
+	v0 = x(1,i,j-1);
 	for(int q = 0; q < 3; ++q)
 		H0[q] = v0*0.5*(PSI_PLUS[q]+PSI_MINUS[q]) - c * fabs(v0)*(PSI_PLUS[q] - PSI_MINUS[q]);
 	for(int q = 0; q < 3; ++q)
@@ -514,14 +523,14 @@ void decompose_grad(const mat2& GU, const symmat2& PSI, symmat2& B, mat2& OMEGA,
 	}
 }
 
-void fill_grad(const layout& lay1, const dof_vector<double>& x, int i, int j, mat2& GU)
+void fill_grad(const dof_vector<double>& U, int i, int j, mat2& GU)
 {
 	double u1, u0, v1, v0;
 	pint p11, p10, p01, p00;
-	u1 = x[lay1.dof(pint(1,i  ,j), 0)];
-	u0 = x[lay1.dof(pint(1,i-1,j), 0)];
-	v1 = x[lay1.dof(pint(2,i  ,j), 1)];
-	v0 = x[lay1.dof(pint(2,i,j-1), 1)];
+	u1 = U(0,i,j);
+	u0 = U(0,i-1,j);
+	v1 = U(1,i,j);
+	v0 = U(1,i,j-1);
 	GU[0] = (u1-u0)/hx; //u_x
 	GU[3] = (v1-v0)/hy; //v_y
 	//u_y 
@@ -530,11 +539,11 @@ void fill_grad(const layout& lay1, const dof_vector<double>& x, int i, int j, ma
 	p01 = pint(1,i  ,j-1);
 	p00 = pint(1,i-1,j-1);
 	if(p10.inside() && p11.inside())
-		u1 = 0.5*( x[lay1.dof(p11,0)] + x[lay1.dof(p10,0)] );
+		u1 = 0.5*( U(0,p11) + U(0,p10) );
 	else
 		u1 = exact(test, 1, 0.5*(p11.x()+p10.x()), 0.5*(p11.y()+p10.y()) );
 	if(p00.inside() && p01.inside())
-		u0 = 0.5*( x[lay1.dof(p01,0)] + x[lay1.dof(p00,0)] );
+		u0 = 0.5*( U(0,p01) + U(0,p00) );
 	else
 		u0 = exact(test, 1, 0.5*(p01.x()+p00.x()), 0.5*(p01.y()+p00.y()) );
 	GU[2] = (u1-u0)/(2*hy); // u_y
@@ -544,18 +553,17 @@ void fill_grad(const layout& lay1, const dof_vector<double>& x, int i, int j, ma
 	p01 = pint(2,i-1,j  );
 	p00 = pint(2,i-1,j-1);
 	if(p10.inside() && p11.inside())
-		v1 = 0.5*( x[lay1.dof(p11,1)] + x[lay1.dof(p10,1)] );
+		v1 = 0.5*( U(1,p11) + U(1,p10) );
 	else
 		v1 = exact(test, 2, 0.5*(p11.x()+p10.x()), 0.5*(p11.y()+p10.y()) );
 	if(p00.inside() && p01.inside())
-		v0 = 0.5*( x[lay1.dof(p01,1)] + x[lay1.dof(p00,1)] );
+		v0 = 0.5*( U(1,p01) + U(1,p00) );
 	else
 		v0 = exact(test, 2, 0.5*(p01.x()+p00.x()), 0.5*(p01.y()+p00.y()) );
 	GU[1] = (v1-v0)/(2*hx); // v_x
 }
 
-//void update_psi(const layout& lay1, const Sparse::Vector& x, const Sparse::Vector& x0, dof_vector<symmat2>& psi, dof_vector<symmat2>& psi0, dof_vector<symmat2>& psi1)
-void update_psi(const layout& lay1, const dof_vector<double>& x, const dof_vector<double>& x0, dof_vector<symmat2>& psi, dof_vector<symmat2>& psi0, dof_vector<symmat2>& psi1)
+void update_psi(const dof_vector<double>& x, const dof_vector<double>& x0, dof_vector<symmat2>& psi, dof_vector<symmat2>& psi0, dof_vector<symmat2>& psi1)
 {
 	double time_rel = fabs(dt0) < 1.0e-12 ? 0.0 : dt/dt0;
 	double a0 = (2*time_rel+1)/(time_rel+1), a1 = -(1+time_rel), a2 = time_rel*time_rel/(1+time_rel);
@@ -573,8 +581,8 @@ void update_psi(const layout& lay1, const dof_vector<double>& x, const dof_vecto
 		A[0+0*3] = A[1+1*3] = A[2+2*3] = a0;
 		for(int q = 0; q < 3; ++q)
 			rhs[q] -= (a1*PSI[q] + a2*PSI0[q]);
-		fill_grad(lay1, x, i, j, GU);
-		fill_grad(lay1, x0, i, j, GU0);
+		fill_grad(x, i, j, GU);
+		fill_grad(x0, i, j, GU0);
 		decompose_grad(GU, PSI, B, OMEGA, Nr);
 		decompose_grad(GU0, PSI0, B0, OMEGA0, Nr0);
 		// OMEGA*PSI(n+1) - PSI(n+1)*OMEGA = (0  w) (p[0] p[2]) - (p[0] p[2]) (0  w)
@@ -586,8 +594,8 @@ void update_psi(const layout& lay1, const dof_vector<double>& x, const dof_vecto
 		A[2+1*3] -= dt*(b1 * w   + b2 * w0);   // xy:  - w*PSI_yy
 		
 		// Nc(UV, PSI) = (UV * nabla) PSI
-		flux_advection(lay1, psi, x, i, j, Nc);
-		flux_advection(lay1, psi0, x0, i, j, Nc0);
+		flux_advection(psi, x, i, j, Nc);
+		flux_advection(psi0, x0, i, j, Nc0);
 		// Nr(PSI) + 2*B - Nc(UV, PSI) into rhs
 		for(int q = 0; q < 3; ++q)
 		{
@@ -605,7 +613,7 @@ void update_psi(const layout& lay1, const dof_vector<double>& x, const dof_vecto
 	psi = psi1;// psi(n)   <- psi(n+1)
 }
 
-void update_tau(const layout& lay1, const dof_vector<symmat2>& psi, dof_vector<symmat2>& tau1, dof_vector<symmat2>& tau)
+void update_tau(const dof_vector<symmat2>& psi, dof_vector<symmat2>& tau1, dof_vector<symmat2>& tau)
 {
 	// remember tau before it is overwritten
 	tau1 = tau;
@@ -647,61 +655,61 @@ int div_tau(int comp, int i, int j, std::array<pint,6>& dofs)
 	if(comp == 1) // x
 	{
 		// xx
-		dofs[0] = pint(3,i+1,j,3);
-		dofs[1] = pint(3,i  ,j,3);
+		dofs[0] = pint(3,i+1,j);
+		dofs[1] = pint(3,i  ,j);
 		dofs[0].coef =  1.0 / hx;
 		dofs[1].coef = -1.0 / hx;
 		// xy
-		dofs[2] = pint(3,i  ,j+1,3);
-		dofs[3] = pint(3,i+1,j+1,3);
+		dofs[2] = pint(3,i  ,j+1);
+		dofs[3] = pint(3,i+1,j+1);
 		dofs[2].coef =  0.5 / hy;
 		dofs[3].coef =  0.5 / hy;
 		if(!dofs[2].inside() || !dofs[3].inside())
 		{
-			dofs[2] = pint(3,i  ,j,3);dofs[2].coef *= 2;
-			dofs[3] = pint(3,i+1,j,3);dofs[3].coef *= 2;
+			dofs[2] = pint(3,i  ,j);dofs[2].coef *= 2;
+			dofs[3] = pint(3,i+1,j);dofs[3].coef *= 2;
 		}
-		dofs[4] = pint(3,i  ,j-1,3);
-		dofs[5] = pint(3,i+1,j-1,3);
+		dofs[4] = pint(3,i  ,j-1);
+		dofs[5] = pint(3,i+1,j-1);
 		dofs[4].coef = -0.5 / hy;
 		dofs[5].coef = -0.5 / hy;
 		if(!dofs[4].inside() || !dofs[5].inside())
 		{
-			dofs[4] = pint(3,i  ,j,3);dofs[4].coef *= 2;
-			dofs[5] = pint(3,i+1,j,3);dofs[5].coef *= 2;
+			dofs[4] = pint(3,i  ,j);dofs[4].coef *= 2;
+			dofs[5] = pint(3,i+1,j);dofs[5].coef *= 2;
 		}
 	}
 	else //if(comp == 2) // y
 	{
 		// yy
-		dofs[0] = pint(3,i,j+1,3);
-		dofs[1] = pint(3,i,j  ,3);
+		dofs[0] = pint(3,i,j+1);
+		dofs[1] = pint(3,i,j  );
 		dofs[0].coef =  1.0 / hy;
 		dofs[1].coef = -1.0 / hy;
 		// xy
-		dofs[2] = pint(3,i+1,j  ,3);
-		dofs[3] = pint(3,i+1,j+1,3);
+		dofs[2] = pint(3,i+1,j  );
+		dofs[3] = pint(3,i+1,j+1);
 		dofs[2].coef =  0.5 / hx;
 		dofs[3].coef =  0.5 / hx;
 		if(!dofs[2].inside() || !dofs[3].inside())
 		{
-			dofs[2] = pint(3,i,j  ,3);dofs[2].coef *= 2;
-			dofs[3] = pint(3,i,j+1,3);dofs[3].coef *= 2;
+			dofs[2] = pint(3,i,j  );dofs[2].coef *= 2;
+			dofs[3] = pint(3,i,j+1);dofs[3].coef *= 2;
 		}
-		dofs[4] = pint(3,i-1,j  ,3);
-		dofs[5] = pint(3,i-1,j+1,3);
+		dofs[4] = pint(3,i-1,j  );
+		dofs[5] = pint(3,i-1,j+1);
 		dofs[4].coef = -0.5 / hx;
 		dofs[5].coef = -0.5 / hx;
 		if(!dofs[4].inside() || !dofs[5].inside())
 		{
-			dofs[4] = pint(3,i,j  ,3);dofs[4].coef *= 2;
-			dofs[5] = pint(3,i,j+1,3);dofs[5].coef *= 2;
+			dofs[4] = pint(3,i,j  );dofs[4].coef *= 2;
+			dofs[5] = pint(3,i,j+1);dofs[5].coef *= 2;
 		}
 	}
 	return 6;
 }
 
-void fill_rhs(const layout& lay1, const dof_vector<symmat2>& psi, const dof_vector<symmat2>& tau, dof_vector<double>& b, double scale = 1.0)
+void fill_rhs(const dof_vector<symmat2>& psi, const dof_vector<symmat2>& tau, dof_vector<double>& b, double scale = 1.0)
 {
 	std::array<pint,6> dofs;
 	int ndofs = 6;
@@ -709,7 +717,7 @@ void fill_rhs(const layout& lay1, const dof_vector<symmat2>& psi, const dof_vect
 	for(int i = 0; i < n1; ++i)
 		for(int j = 1; j < n2; ++j)
 	{
-		int m = lay1.dof(pint(1,i,j),0);
+		int m = b.index(0,i,j);
 		div_tau(1,i,j,dofs);
 		for(int q = 0; q < ndofs/2; ++q)
 			//if(dofs[q].inside())
@@ -718,14 +726,14 @@ void fill_rhs(const layout& lay1, const dof_vector<symmat2>& psi, const dof_vect
 		{
 			int q1 = 2*q+k;
 			int d = q1 < 2 ? 0 : 2;//xx(0) xy(2)
-			b[m] += dofs[q1].coef * mu_p*tau(0,dofs[q1].i,dofs[q1].j)[d] * scale;
+			b(0,i,j) += dofs[q1].coef * mu_p*tau(0,dofs[q1].i,dofs[q1].j)[d] * scale;
 		}
 }
 	// grid2
 	for(int j = 0; j < n2; ++j)
 		for(int i = 1; i < n1; ++i)
 	{
-		int m = lay1.dof(pint(2,i,j),1);
+		int m = b.index(1,i,j);
 		div_tau(2,i,j,dofs);
 		for(int q = 0; q < ndofs/2; ++q)
 			//if(dofs[q].inside())
@@ -734,7 +742,7 @@ void fill_rhs(const layout& lay1, const dof_vector<symmat2>& psi, const dof_vect
 		{
 			int q1 = 2*q+k;
 			int d = q1 < 2 ? 1 : 2;//yy(1) xy(2)
-			b[m] += dofs[q1].coef * mu_p*tau(0,dofs[q1].i,dofs[q1].j)[d] * scale;
+			b(1,i,j) += dofs[q1].coef * mu_p*tau(0,dofs[q1].i,dofs[q1].j)[d] * scale;
 		}
 	}
 }
@@ -756,7 +764,7 @@ void fill_vector(const std::vector<double>& in, dof_vector<double>& out)
 	std::copy(in.begin(), in.end(), out.U.begin());
 }
 
-void save_vtk(std::string filename, const layout& lay1, const dof_vector<symmat2>& psi, const dof_vector<symmat2>& tau, const dof_vector<double>& x)
+void save_vtk(std::string filename, const dof_vector<symmat2>& psi, const dof_vector<symmat2>& tau, const dof_vector<double>& x)
 {
 	std::ofstream ofs(filename);
 
@@ -790,7 +798,7 @@ void save_vtk(std::string filename, const layout& lay1, const dof_vector<symmat2
 	{
 		double p = 0.0;
 		if(i > 0 && i < n1 && j > 0 && j < n2)
-			p = x[lay1.dof(pint(3,i,j),2)];
+			p = x(2,i,j);
 		ofs << p << '\n';
 	}
 	//divergence
@@ -806,7 +814,7 @@ void save_vtk(std::string filename, const layout& lay1, const dof_vector<symmat2
 			int ndofs = div(i,j,dofs);
 			for(int q = 0; q < ndofs; ++q)
 				if( dofs[q].inside() )
-					divu += x[lay1.dof(dofs[q],dofs[q].grid-1)] * dofs[q].coef;
+					divu += x(dofs[q].grid-1,dofs[q]) * dofs[q].coef;
 				else
 					divu += exact(test, q < 2 ? 1 : 2, dofs[q].x(), dofs[q].y()) * dofs[q].coef;
 		}
@@ -858,7 +866,7 @@ void save_vtk(std::string filename, const layout& lay1, const dof_vector<symmat2
 			dofs[0] = pint(1,i,j  );
 			dofs[1] = pint(1,i-1,j);
 			for(int k = 0; k < 2; ++k)
-				if(dofs[k].inside()) u[k] = dofs[k].coef = x[lay1.dof(dofs[k], 0)];
+				if(dofs[k].inside()) u[k] = x(0, dofs[k]);
 				else u[0] = u[1] = dofs[k].coef = exact(test, 1, dofs[k].x(), dofs[k].y());
 		}
 		ofs << 0.5*(u[0]+u[1]) << '\n';
@@ -875,7 +883,7 @@ void save_vtk(std::string filename, const layout& lay1, const dof_vector<symmat2
 			dofs[0] = pint(2,i,j  );
 			dofs[1] = pint(2,i,j-1);
 			for(int k = 0; k < 2; ++k)
-				if(dofs[k].inside()) u[k] = dofs[k].coef = x[lay1.dof(dofs[k], 1)];
+				if(dofs[k].inside()) u[k] = x(1, dofs[k]);
 				else u[0] = u[1] = dofs[k].coef = exact(test, 2, dofs[k].x(), dofs[k].y());
 		}
 		ofs << 0.5*(u[0]+u[1]) << '\n';
@@ -971,7 +979,7 @@ void fill_stokes(dof_vector<double>& RHS0, matrix_type& A, const layout& lay1, d
 	{
 		int k = lay1.dof(pint(1,i,j), 0);
 		laplace(i,j,1,dofs1,dofs2, -mu_s);
-		RHS0[k] = rhs_exact(test, 1,(i+0.5)*hx,j*hy) * scale;
+		RHS0(0,i,j) = rhs_exact(test, 1,(i+0.5)*hx,j*hy) * scale;
 		for(int q = 0; q < 5; ++q)
 			if( dofs1[q].inside() )
 			{
@@ -985,7 +993,7 @@ void fill_stokes(dof_vector<double>& RHS0, matrix_type& A, const layout& lay1, d
 				}
 			}
 			else //if(test == 0)
-				RHS0[k] -= dofs1[q].coef * scale * exact(test, 1,dofs1[q].x(),dofs1[q].y());
+				RHS0(0,i,j) -= dofs1[q].coef * scale * exact(test, 1,dofs1[q].x(),dofs1[q].y());
 		if(divgrad) // \Delta_h = 2 div_h D_h instead of five-point Laplace:
 			for(int q = 0; q < 4; ++q)
 				if( dofs2[q].inside() )
@@ -1000,7 +1008,7 @@ void fill_stokes(dof_vector<double>& RHS0, matrix_type& A, const layout& lay1, d
 					}
 				}
 				else //if(test == 0)
-					RHS0[k] -= dofs2[q].coef * scale * exact(test, 2,dofs2[q].x(),dofs2[q].y());
+					RHS0(0,i,j) -= dofs2[q].coef * scale * exact(test, 2,dofs2[q].x(),dofs2[q].y());
 		ndofs = grad(i,j,1,dofs3);
 		if(test != 0 || (i != 0 && i != n1-1)) //skipping boundary gives BC dp/dx=0 (test = 0), some analytics may have dp/dx != 0
 			for(int q = 0; q < ndofs; ++q) if( dofs3[q].inside() )
@@ -1022,7 +1030,7 @@ void fill_stokes(dof_vector<double>& RHS0, matrix_type& A, const layout& lay1, d
 	{
 		int k = lay1.dof(pint(2,i,j), 1);
 		laplace(i,j,2,dofs1,dofs2, -mu_s);
-		RHS0[k] = rhs_exact(test, 2,i*hx,(j+0.5)*hy) * scale;
+		RHS0(1,i,j) = rhs_exact(test, 2,i*hx,(j+0.5)*hy) * scale;
 		for(int q = 0; q < 5; ++q)
 			if( dofs2[q].inside() )
 			{
@@ -1037,7 +1045,7 @@ void fill_stokes(dof_vector<double>& RHS0, matrix_type& A, const layout& lay1, d
 
 			}
 			else //if(test == 0)
-				RHS0[k] -= dofs2[q].coef * scale * exact(test, 2,dofs2[q].x(),dofs2[q].y());
+				RHS0(1,i,j) -= dofs2[q].coef * scale * exact(test, 2,dofs2[q].x(),dofs2[q].y());
 		if(divgrad) // \Delta_h = 2 div_h D_h instead of five-point Laplace:
 			for(int q = 0; q < 4; ++q)
 				if( dofs1[q].inside() )
@@ -1052,7 +1060,7 @@ void fill_stokes(dof_vector<double>& RHS0, matrix_type& A, const layout& lay1, d
 					}
 				}
 				else //if(test == 0)
-					RHS0[k] -= dofs1[q].coef * scale * exact(test, 1,dofs1[q].x(),dofs1[q].y());
+					RHS0(1,i,j) -= dofs1[q].coef * scale * exact(test, 1,dofs1[q].x(),dofs1[q].y());
 		ndofs = grad(i,j,2,dofs3);
 		if(test != 0 || (j != 0 && j != n2-1))//skipping boundary gives BC dp/dy=0 (test = 0), some analytics may have dp/dy != 0
 			for(int q = 0; q < ndofs; ++q) if( dofs3[q].inside() )
@@ -1074,11 +1082,12 @@ void fill_stokes(dof_vector<double>& RHS0, matrix_type& A, const layout& lay1, d
 	{
 		int k = lay1.dof(pint(3,i,j), 2);
 		ndofs = div(i,j,dofs1);
-		/*if(integral_constraint && !filled)
+		if(integral_constraint && !filled)
 		{
+			int nstokes = lay1.size();
 			A[k][nstokes-1] = scale;
 			A[nstokes-1][k] = scale;
-		}*/
+		}
 		for(int q = 0; q < ndofs; ++q)
 			if( dofs1[q].inside() )
 			{
@@ -1092,7 +1101,7 @@ void fill_stokes(dof_vector<double>& RHS0, matrix_type& A, const layout& lay1, d
 				}
 			}
 			else //if(test == 0)
-				RHS0[k] -= dofs1[q].coef * scale * exact(test, q < 2 ? 1 : 2,dofs1[q].x(),dofs1[q].y());
+				RHS0(2,i,j) -= dofs1[q].coef * scale * exact(test, q < 2 ? 1 : 2,dofs1[q].x(),dofs1[q].y());
 #if defined(USE_S3M)
 		if(!filled) A.FinalizeRow();
 #endif
@@ -1136,15 +1145,14 @@ int main(int argc, char ** argv)
 	dof_vector<double> UVP(&lay1), UVP0(&lay1), RHS(&lay1), RHS0(&lay1);
 	dof_vector<symmat2> PSI(&lay2), PSI0(&lay2), PSI1(&lay2), TAU(&lay2), TAU0(&lay2), TAU1(&lay2);
 
-	int nstokes = lay1.offset(3);//n1*(n2-1)+n2*(n1-1)+(n1-1)*(n2-1); // Uh,Vh,Ph
-	int ntau = lay2.offset(1);//3*(n1-1)*(n2-1);
+	int nstokes = lay1.size();//n1*(n2-1)+n2*(n1-1)+(n1-1)*(n2-1); // Uh,Vh,Ph
+	int ntau = lay2.size();//3*(n1-1)*(n2-1);
 	std::cout << "nstokes " << nstokes << " ntau " << ntau << std::endl;
 	// psi = (psi_xx (Ph), psi_yy (Ph), psi_xy (Ph))
 	// psi -- psi(n), psi0 -- psi(n-1), psi1 -- psi(n+1)
 	// tau -- tau(n+1), tau0 -- tau(n-1), tau1 -- tau(n)
 
-	//bool integral_constraint = false;
-	//if(integral_constraint) nstokes += 1; // integral constraint on pressure
+	if(integral_constraint) nstokes += 1; // integral constraint on pressure
 
 	bool filled = false;
 	bool success = false, finish = false;
@@ -1183,7 +1191,7 @@ int main(int argc, char ** argv)
 		//b0.Save("b0.txt");
 		//std::copy(b0.Begin(),b0.End(),b.Begin());
 		RHS = RHS0;
-		if(test == 0) fill_rhs(lay1, PSI, TAU, RHS, scale);
+		if(test == 0) fill_rhs(PSI, TAU, RHS, scale);
 		fill_vector(RHS, b);
 #if !defined(USE_S3M)
 		std::fill(x.Begin(),x.End(),0.0);
@@ -1207,12 +1215,9 @@ int main(int argc, char ** argv)
 			finish = true;
 		else if(success)
 		{
-			//update_psi(lay1, x, x0, PSI, PSI0, PSI1);
-			update_psi(lay1, UVP, UVP0, PSI, PSI0, PSI1);
-			//std::copy(UVP.U.begin(), UVP.U.end(), UVP0.U.begin());
+			update_psi(UVP, UVP0, PSI, PSI0, PSI1);
 			UVP0 = UVP;
-			//update_tau(lay1, PSI, TAU1, TAU);
-			update_tau(lay1, PSI, TAU1, TAU);
+			update_tau(PSI, TAU1, TAU);
 			res = residual(TAU0, TAU);
 			TAU0 = TAU1;
 			std::cout << "t " << t << "/" << T << " iter " << iter << " " << " resid " << res << std::endl;
@@ -1220,7 +1225,7 @@ int main(int argc, char ** argv)
 			if(iter % nframe == 0)
 			{
 				int frame = iter/nframe;
-				save_vtk("out" + std::to_string(frame) + ".vtk", lay1, PSI, TAU, UVP);
+				save_vtk("out" + std::to_string(frame) + ".vtk", PSI, TAU, UVP);
 			}
 			++iter;
 			finish = res < atol && t > T;
