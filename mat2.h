@@ -185,20 +185,6 @@ int test_mat2()
 	solve3(A3, rhs, sol);
 	std::cout << "solve3: sol " << sol[0] << " " << sol[1] << " " << sol[2] << "; expected " << x[0] << " " << x[1] << " " << x[2] << std::endl;
 
-	/*
-	double D1[4] = {1,2,3,4};
-	double U1[4] = {5,6,7,8};
-	double L1[4] = {9,10,11,12};
-	double RHS1[5] = {-26,-26,-44,-24,26};
-	double SOL1[5] = {-1,2,-3,4,-5}, SOL2[5];
-	solve_bordered<5>(D1,U1,L1,RHS1,SOL2);
-	for(int k = 0; k < 5; ++k)
-		if(fabs(SOL1[k]-SOL2[k]) > 1.0e-8)
-			std::cout << "FAIL: solve_bordered k " << k
-				<< " expected " << SOL1[k]
-				<< " computed " << SOL2[k]
-				<< std::endl;
-	*/
 	return 0;
 }
 

@@ -198,6 +198,10 @@ struct dof_vector
 		assert(level < lay->nlevels);
 		std::copy(other.U.begin()+other.offset(level), other.U.begin()+other.offset(level+1), U.begin()+offset(level));
 	}
+	void zero(int level)
+	{
+		std::fill(U.begin()+offset(level), U.begin()+offset(level+1), 0.0);
+	}
 	T& operator()(int igrid, const pint& p)
 	{
 		//return U[lay->dof(p, igrid)];
@@ -209,7 +213,7 @@ struct dof_vector
 		return U[offset(p.level)+lay->dof(p, igrid)];
 	}
 
-	double l2norm(int level = 0)
+	double l2norm(int level = 0) const
 	{
 		double norm = 0.0;
 		double hx = pint::hx(level), hy = pint::hy(level);

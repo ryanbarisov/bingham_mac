@@ -1,69 +1,62 @@
 #ifndef _DISCR_H
 #define _DISCR_H
 
+#include "analytics.h"
 #include "grid.h"
 
 extern double We;
 extern int test;
 extern double dt, dt0;
 extern bool divgrad;
+extern int level0;
 
 void laplace(const pint& pdof, pint * dofs1, pint * dofs2, double mult)
 {
-	double coef1 = divgrad ? 2.0 : 1.0;
 	int i = pdof.i, j = pdof.j, grid = pdof.grid, level = pdof.level;
-	double hx = pint::hx(level), hy = pint::hy(level), hx0 = pint::hx(0), hy0 = pint::hy(0);
+	double hx = pint::hx(level), hy = pint::hy(level), hx0 = pint::hx(level0), hy0 = pint::hy(level0);
 	if(grid == 1) // \Delta_h, x component
 	{
 		// Uh
-		double coef[2], h[2] = {hy,hy};
-		dofs1[0] = pint(1,i+1,j,level);
-		dofs1[1] = pint(1,i-1,j,level);
-		coef[0] = dofs1[0].inside() ? 1.0 : 0.5;
-		coef[1] = dofs1[1].inside() ? 1.0 : 0.5;
-		dofs1[0].coef = coef1/(hx*hx*coef[0]) * mult;
-		dofs1[1].coef = coef1/(hx*hx*coef[1]) * mult;
-		dofs1[2] = pint(1,i,j+1,level); if(!dofs1[2].inside()) h[0] = 0.5*(hy+hy0);
-		dofs1[2].coef = 1.0/(hy*h[0]) * mult;
-		dofs1[3] = pint(1,i,j-1,level); if(!dofs1[3].inside()) h[1] = 0.5*(hy+hy0);
-		dofs1[3].coef = 1.0/(hy*h[1]) * mult;
+		double h[4] = {hx,hx,hy,hy};
+		dofs1[0] = pint(1,i+1,j,level); h[0] = dofs1[0].inside() ? hx : 0.5*hx0;
+		dofs1[1] = pint(1,i-1,j,level); h[1] = dofs1[1].inside() ? hx : 0.5*hx0;
+		dofs1[0].coef = 2./(h[0]*(h[0]+h[1])) * mult;//dofs1[0].coef = 1.0/(hx*h[0]) * mult;
+		dofs1[1].coef = 2./(h[1]*(h[0]+h[1])) * mult;//dofs1[1].coef = 1.0/(hx*h[1]) * mult;
+		dofs1[2] = pint(1,i,j+1,level); h[2] = 0.5*hy + 0.5*(dofs1[2].inside() ? hy : hy0);
+		dofs1[3] = pint(1,i,j-1,level); h[3] = 0.5*hy + 0.5*(dofs1[3].inside() ? hy : hy0);
+		dofs1[2].coef = 2./(h[2]*(h[2]+h[3])) * mult;//1.0/(hy*h[2]) * mult;
+		dofs1[3].coef = 2./(h[3]*(h[2]+h[3])) * mult;//1.0/(hy*h[3]) * mult;
 		dofs1[4] = pint(1,i,j  ,level); dofs1[4].coef = 0.0;
 		for(int k = 0; k < 4; ++k) dofs1[4].coef -= dofs1[k].coef;
-		// Vh
-		dofs2[0] = pint(2,i+1,j  ,level); //if(!dofs2[0].inside()) h[0] = 0.5*(hx+hx0);
-		dofs2[0].coef =  1.0/(h[0]*hy) * mult;
-		dofs2[1] = pint(2,i+1,j-1,level); //if(!dofs2[1].inside()) h[0] = 0.5*(hx+hx0);
-		dofs2[1].coef = -1.0/(h[0]*hy) * mult;
-		dofs2[2] = pint(2,i,j    ,level); //if(!dofs2[2].inside()) h[1] = 0.5*(hx+hx0);
-		dofs2[2].coef = -1.0/(h[1]*hy) * mult;
-		dofs2[3] = pint(2,i,j-1  ,level); //if(!dofs2[3].inside()) h[1] = 0.5*(hx+hx0);
-		dofs2[3].coef =  1.0/(h[1]*hy) * mult;
 	}
-	else // \Delta_h, y component
+	else if(grid == 2) // \Delta_h, y component
 	{
 		// Vh
-		double coef[2], h[2] = {hx,hx};
-		dofs2[0] = pint(2,i,j+1,level);
-		dofs2[1] = pint(2,i,j-1,level);
-		coef[0] = dofs2[0].inside() ? 1.0 : 0.5;
-		coef[1] = dofs2[1].inside() ? 1.0 : 0.5;
-		dofs2[0].coef = coef1/(hy*hy*coef[0]) * mult;
-		dofs2[1].coef = coef1/(hy*hy*coef[1]) * mult;
-		dofs2[2] = pint(2,i+1,j,level); if(!dofs2[2].inside()) h[0] = 0.5*(hx+hx0);
-		dofs2[2].coef = 1.0/(hx*h[0]) * mult;
-		dofs2[3] = pint(2,i-1,j,level); if(!dofs2[3].inside()) h[1] = 0.5*(hx+hx0);
-		dofs2[3].coef = 1.0/(hx*h[1]) * mult;
+		double h[4] = {hy,hy,hx,hx};
+		dofs2[0] = pint(2,i,j+1,level); h[0] = dofs2[0].inside() ? hy : 0.5*hy0;
+		dofs2[1] = pint(2,i,j-1,level); h[1] = dofs2[1].inside() ? hy : 0.5*hy0;
+		dofs2[0].coef = 2./(h[0]*(h[0]+h[1])) * mult;//1.0/(hy*h[0]) * mult;
+		dofs2[1].coef = 2./(h[1]*(h[0]+h[1])) * mult;//1.0/(hy*h[1]) * mult;
+		dofs2[2] = pint(2,i+1,j,level); h[2] = 0.5*hx + 0.5*(dofs2[2].inside() ? hx : hx0);
+		dofs2[3] = pint(2,i-1,j,level); h[3] = 0.5*hx + 0.5*(dofs2[3].inside() ? hx : hx0);
+		dofs2[2].coef = 2./(h[2]*(h[2]+h[3])) * mult;//1.0/(hx*h[2]) * mult;
+		dofs2[3].coef = 2./(h[3]*(h[2]+h[3])) * mult;//1.0/(hx*h[3]) * mult;
 		dofs2[4] = pint(2,i,j  ,level); dofs2[4].coef = 0.0;
 		for(int k = 0; k < 4; ++k) dofs2[4].coef -= dofs2[k].coef;
-		// Uh
-		dofs1[0] = pint(1,i,  j+1,level); //if(!dofs1[0].inside()) h[0] = 0.5*(hy+hy0);
-		dofs1[0].coef =  1.0/(hx*h[0]) * mult;
-		dofs1[1] = pint(1,i-1,j+1,level); //if(!dofs1[1].inside()) h[0] = 0.5*(hy+hy0);
-		dofs1[1].coef = -1.0/(hx*h[0]) * mult;
-		dofs1[2] = pint(1,i,j    ,level); //if(!dofs1[2].inside()) h[1] = 0.5*(hy+hy0);
-		dofs1[2].coef = -1.0/(hx*h[1]) * mult;
-		dofs1[3] = pint(1,i-1,j  ,level); //if(!dofs1[3].inside()) h[1] = 0.5*(hy+hy0);
-		dofs1[3].coef =  1.0/(hx*h[1]) * mult;
+	}
+	else if(grid == 3) // \Delta_h on Ph
+	{
+		double h[4] = {hx,hx,hy,hy};
+		dofs1[0] = pint(3,i+1,j,level); h[0] = 0.5*hx + 0.5*(dofs1[0].inside() ? hx : hx0);
+		dofs1[1] = pint(3,i-1,j,level); h[1] = 0.5*hx + 0.5*(dofs1[1].inside() ? hx : hx0);
+		dofs1[0].coef = 2./(h[0]*(h[0]+h[1])) * mult;//1.0/(hx*h[0]) * mult;
+		dofs1[1].coef = 2./(h[1]*(h[0]+h[1])) * mult;//1.0/(hx*h[1]) * mult;
+		dofs1[2] = pint(3,i,j+1,level); h[2] = 0.5*hy + 0.5*(dofs1[2].inside() ? hy : hy0);
+		dofs1[3] = pint(3,i,j-1,level); h[3] = 0.5*hy + 0.5*(dofs1[3].inside() ? hy : hy0);
+		dofs1[2].coef = 2./(h[2]*(h[2]+h[3])) * mult;//1.0/(hy*h[2]) * mult;
+		dofs1[3].coef = 2./(h[3]*(h[2]+h[3])) * mult;//1.0/(hy*h[3]) * mult;
+		dofs1[4] = pint(3,i,j  ,level); dofs1[4].coef = 0.0;
+		for(int k = 0; k < 4; ++k) dofs1[4].coef -= dofs1[k].coef;
 	}
 }
 
@@ -326,7 +319,7 @@ void decompose_grad(const mat2& GU, const symmat2& PSI, symmat2& B, mat2& OMEGA,
 		B[0] = GU[0];
 		B[1] = GU[3];
 		B[2] = 0.5*(GU[1]+GU[2]);
-		OMEGA[0] = OMEGA[1] = OMEGA[2] = OMEGA[3] = 0.0; 
+		OMEGA[0] = OMEGA[1] = OMEGA[2] = OMEGA[3] = 0.0;
 	}
 	else
 	{
@@ -355,7 +348,7 @@ void fill_grad(const dof_vector<double>& U, const pint& pdof, mat2& GU)
 	v0 = U(1,p00);
 	GU[0] = (u1-u0)/hx; //u_x
 	GU[3] = (v1-v0)/hy; //v_y
-	//u_y 
+	//u_y
 	p11 = pint(1,i  ,j+1,level);
 	p10 = pint(1,i-1,j+1,level);
 	p01 = pint(1,i  ,j-1,level);
@@ -417,7 +410,7 @@ void update_psi(const dof_vector<double>& x, const dof_vector<double>& x0, dof_v
 		A[1+2*3] += dt*(b1 * 2*w + b2 * 2*w0); // yy:  2*w*PSI_xy
 		A[2+0*3] += dt*(b1 * w   + b2 * w0);   // xy:    w*PSI_xx
 		A[2+1*3] -= dt*(b1 * w   + b2 * w0);   // xy:  - w*PSI_yy
-		
+
 		// Nc(UV, PSI) = (UV * nabla) PSI
 		flux_advection(psi, x, pdof, Nc);
 		flux_advection(psi0, x0, pdof, Nc0);
@@ -433,7 +426,7 @@ void update_psi(const dof_vector<double>& x, const dof_vector<double>& x0, dof_v
 		for(int q = 0; q < 3; ++q)
 			psi1(0,pdof)[q] = sol[q];
 	}
-	
+
 	psi0.assign(psi , level);// psi(n-1) <- psi(n)
 	psi.assign (psi1, level);// psi(n)   <- psi(n+1)
 }

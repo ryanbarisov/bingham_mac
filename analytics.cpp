@@ -1,5 +1,6 @@
 #include "analytics.h"
 #include <cmath>
+#include <cassert>
 
 extern double mu_s;
 extern double t;
@@ -15,6 +16,11 @@ double exact(int test, int grid, double x, double y)
 			return -1.0/(4*M_PI*M_PI) * (1-cos(2*M_PI*y)) * sin(2*M_PI*x);
 		else // if(grid == 3) // Ph
 		     	return 1.0/M_PI * sin(2*M_PI*x) * sin(2*M_PI*y);
+	}
+	else if(test == 2)
+	{
+		assert(grid == 3);
+		return sin(M_PI*x)*sin(M_PI*y);
 	}
 	else // if(test == 0)
 	{
@@ -57,6 +63,11 @@ double rhs_exact(int test, int grid, double x, double y)
 		else if(grid == 2) // Vh
 			return -mu_s*(-2*cos(2*M_PI*y)+1)*sin(2*M_PI*x) + 2*cos(2*M_PI*y)*sin(2*M_PI*x);
 		else return 0.0;
+	}
+	else if(test == 2)
+	{
+		assert(grid == 3);
+		return 2*M_PI*M_PI*exact(test,grid,x,y);
 	}
 	else // if(test == 0)
 	{
