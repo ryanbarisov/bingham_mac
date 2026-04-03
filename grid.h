@@ -18,12 +18,12 @@ typedef struct pint
 	static int nx(int grid, int level) // amount of unknowns in X direction depends on level
 	{
 		if(grid == 1 || grid == 4) return (1 << (glev-level)) + 1;
-		else return 1 << (glev-level) + 0;
+		else return (1 << (glev-level)) + 0;
 	}
 	static int ny(int grid, int level) // amount of unknowns in X direction depends on level
 	{
 		if(grid == 2 || grid == 4) return (1 << (glev-level)) + 1;
-		else return 1 << (glev-level) + 0;
+		else return (1 << (glev-level)) + 0;
 	}
 	static double hx(int level) { return 1.0/nx(1,level); }
 	static double hy(int level) { return 1.0/ny(2,level); }

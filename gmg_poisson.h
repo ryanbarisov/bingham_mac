@@ -51,7 +51,7 @@ void gs_smoother(int i, int j, dof_vector<double>& UVP, dof_vector<double>& RHS,
 	for(int q = 0; q < 4; ++q)
 		if(dofs1[q].inside())
 			val -= dofs1[q].coef*UVP(0,dofs1[q]);
-		else
+		else if(level == level0)
 			val -= dofs1[q].coef*exact(test,dofs1[q].grid,dofs1[q].x(),dofs1[q].y());
 	assert(pdof == dofs1[4]);
 	UVP(0,pdof) = val / dofs1[4].coef;

@@ -11,6 +11,52 @@ double We = 1.0;
 double dt = 1.0, dt0 = 1.0;
 double t = 0.0;
 
+int main2(int argc, char ** argv)
+{
+	if(argc > 1)
+		glev = atoi(argv[1]);
+	pint::glev = glev;
+	int nx[3], ny[3];
+	for(int k = 0; k < 3; ++k)
+	{
+		nx[k] = pint::nx(1,k);
+		ny[k] = pint::ny(2,k);
+		std::cout << "level " << k << " nx " << nx[k] << " ny " << ny[k]  << std::endl;
+		int level = k;
+		int n1 = nx[level], n2 = ny[level];
+		double hx = pint::hx(level), hy = pint::hy(level);
+		double hx0 = pint::hx(0), hy0 = pint::hy(0);
+		for(int i = 0; i < n1; ++i)
+			for(int j = 1; j < n2; ++j)
+		{
+			pint pdof(1,i,j,level);
+			assert(pdof.inside());
+			if(i == 0) assert(fabs(pdof.x()-0.5*hx0) < 1.0e-6*hx);
+			if(i == n1-1) assert(fabs(pdof.x()-(1-0.5*hx0)) < 1.0e-6*hx);
+		}
+		for(int j = 0; j < n2; ++j)
+			for(int i = 1; i < n1; ++i)
+		{
+			pint pdof(2,i,j,level);
+			assert(pdof.inside());
+			if(j == 0) assert(fabs(pdof.y()-0.5*hy0) < 1.0e-6*hy);
+			if(j == n2-1) assert(fabs(pdof.y()-(1-0.5*hy0)) < 1.0e-6*hy);
+		}
+		for(int i = 1; i < n1; ++i)
+			for(int j = 1; j < n2; ++j)
+		{
+			pint pdof(3,i,j,level);
+			assert(pdof.inside());
+			if(i == 1) assert(fabs(pdof.x()-0.5*(hx+hx0)) < 1.0e-6*hx);
+			if(i == n1-1) assert(fabs(pdof.x()-(1-0.5*(hx+hx0))) < 1.0e-6*hx);
+			if(j == 1) assert(fabs(pdof.y()-0.5*(hy+hy0)) < 1.0e-6*hy);
+			if(j == n2-1) assert(fabs(pdof.y()-(1-0.5*(hy+hy0))) < 1.0e-6*hy);
+		}
+	}
+
+	return 0;
+}
+
 int main(int argc, char ** argv)
 {
 	Solver::Initialize(&argc, &argv,"database.xml");
@@ -18,7 +64,7 @@ int main(int argc, char ** argv)
 	if(argc > 1)
 		glev = atoi(argv[1]);
 	pint::glev = glev;
-	int nlevels = level0+1;
+	int nlevels = level0+4;
 	int level = level0;
 
 	test = 2;
@@ -33,7 +79,8 @@ int main(int argc, char ** argv)
 
 	multigrid_params common;
 	common.nlevels = nlevels; common.maxiters = 30; common.atol = 1.0e-8;
-	common.smooth_iters = 4; common.schedule = 2;
+	common.smooth_iters = 8; common.schedule = 2;
+	common.integral_constraint = false;
 	gmg_poisson gmg(common, lay1);
 	dof_vector<double> &UVP = gmg.UVP, &RHS = gmg.RHS;
 	dof_vector<double> UVP0(&lay1);

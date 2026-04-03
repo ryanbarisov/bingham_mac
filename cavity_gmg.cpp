@@ -104,9 +104,9 @@ int main(int argc, char ** argv)
 	if(argc > 4)
 		We = atof(argv[4]);
 
-	//test = 1;
+	test = 1;
 	
-	int nlevels = level0+3;
+	int nlevels = level0+4;
 	int level = level0; // TODO
 	int n1 = pint::nx(1,level), n2 = pint::ny(2,level);
 	double hx = pint::hx(level), hy = pint::hy(level);
@@ -136,8 +136,8 @@ int main(int argc, char ** argv)
 
 	multigrid_params common;
 	common.nlevels = nlevels; common.maxiters = 30;
-	common.atol = 1.0e-6; common.rtol = 1.0e-12;
-	common.smooth_iters = 4; common.schedule = 2;
+	common.atol = 1.0e-8; common.rtol = 1.0e-12;
+	common.smooth_iters = 8; common.schedule = 2;
 	//common.integral_constraint = false;
 	gmg_stokes gmg(common, lay1);
 	dof_vector<double> &UVP = gmg.UVP, &RHS = gmg.RHS;

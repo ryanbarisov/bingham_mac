@@ -147,8 +147,8 @@ void vanka_smoother(int iters, dof_vector<double>& UVP, const dof_vector<double>
 	static bool fwd = 0;
 	for(int iter = 0; iter < iters; ++iter)
 	{
-		//if(iter % 2 == fwd)
-		if(fwd)
+		if(iter % 2 == fwd)
+		//if(fwd)
 		for(int i = 1; i < n1; ++i)
 			for(int j = 1; j < n2; ++j)
 				vanka_smoother(UVP, RHS0, i, j, level);
