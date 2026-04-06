@@ -52,21 +52,23 @@ void update_time()
 void setup_exact(dof_vector<double>& UVP)
 {
 	int level = 0;
-	int n1 = pint::nx(1,level), n2 = pint::ny(2,level);
-	for(int i = 0; i < n1; ++i)
-		for(int j = 1; j < n2; ++j)
+	int nx1 = pint::nx(1,level), ny1 = pint::ny(1,level);
+	int nx2 = pint::nx(2,level), ny2 = pint::ny(2,level);
+	int nx3 = pint::nx(3,level), ny3 = pint::ny(3,level);
+	for(int i = 1; i < nx1+1; ++i)
+		for(int j = 1; j < ny1+1; ++j)
 	{
 		pint pdof(1,i,j,level);
 		UVP(0,pdof) = exact(test, pdof.grid,pdof.x(),pdof.y());
 	}
-	for(int i = 1; i < n1; ++i)
-		for(int j = 0; j < n2; ++j)
+	for(int j = 1; j < ny2+1; ++j)
+		for(int i = 1; i < nx2+1; ++i)
 	{
 		pint pdof(2,i,j,level);
 		UVP(1,pdof) = exact(test, pdof.grid,pdof.x(),pdof.y());
 	}
-	for(int i = 1; i < n1; ++i)
-		for(int j = 1; j < n2; ++j)
+	for(int i = 1; i < nx3+1; ++i)
+		for(int j = 1; j < ny3+1; ++j)
 	{
 		pint pdof(3,i,j,level);
 		UVP(2,pdof) = exact(test, pdof.grid,pdof.x(),pdof.y());
@@ -108,7 +110,7 @@ int main(int argc, char ** argv)
 	
 	int nlevels = level0+4;
 	int level = level0; // TODO
-	int n1 = pint::nx(1,level), n2 = pint::ny(2,level);
+	int n1 = pint::nx(3,level), n2 = pint::ny(3,level);
 	double hx = pint::hx(level), hy = pint::hy(level);
 	dt = cfl * std::min(hx,hy);
 	std::cout << "n1 " << pint::nx(1,level) << " n2 " << pint::ny(2,level) << " test " << test << " dt " << dt << std::endl;
@@ -136,14 +138,14 @@ int main(int argc, char ** argv)
 
 	multigrid_params common;
 	common.nlevels = nlevels; common.maxiters = 30;
-	common.atol = 1.0e-8; common.rtol = 1.0e-12;
+	common.rtol = 1.0e-5; common.atol = 1.0e-10;
 	common.smooth_iters = 8; common.schedule = 2;
 	//common.integral_constraint = false;
 	gmg_stokes gmg(common, lay1);
 	dof_vector<double> &UVP = gmg.UVP, &RHS = gmg.RHS;
 	if(test) setup_exact(UVP);
 	save_vtk("tmp0.vtk", PSI, TAU, UVP);
-	UVP.zero(0);
+	UVP.zero(level);
 	do
 	{
 		RHS.zero(level);
@@ -152,25 +154,28 @@ int main(int argc, char ** argv)
 		if(test)
 		{
 			finish = true;
-			for(int i = 0; i < n1; ++i)
-				for(int j = 1; j < n2; ++j)
+			int nx1 = pint::nx(1,level), ny1 = pint::ny(1,level);
+			int nx2 = pint::nx(2,level), ny2 = pint::ny(2,level);
+			int nx3 = pint::nx(3,level), ny3 = pint::ny(3,level);
+			for(int i = 1; i < nx1+1; ++i)
+				for(int j = 1; j < ny1+1; ++j)
 			{
 				pint pdof(1,i,j,level);
 				UVP0(0,pdof) = fabs(UVP(0,pdof)-exact(test,1,pdof.x(),pdof.y()));
 			}
-			for(int j = 0; j < n2; ++j)
-				for(int i = 1; i < n1; ++i)
+			for(int j = 1; j < ny2+1; ++j)
+				for(int i = 1; i < nx2+1; ++i)
 			{
 				pint pdof(2,i,j,level);
 				UVP0(1,pdof) = fabs(UVP(1,pdof)-exact(test,2,pdof.x(),pdof.y()));
 			}
-			for(int i = 1; i < n1; ++i)
-				for(int j = 1; j < n2; ++j)
+			for(int i = 1; i < nx3+1; ++i)
+				for(int j = 1; j < ny3+1; ++j)
 			{
 				pint pdof(3,i,j,level);
 				UVP0(2,pdof) = fabs(UVP(2,pdof)-exact(test,3,pdof.x(),pdof.y()));
 			}
-			save_vtk("tmp1.vtk", PSI, TAU, UVP0, level);
+			save_vtk("tmp1.vtk", PSI, TAU, UVP0, level0);
 			save_vtk("tmp2.vtk", PSI, TAU, UVP);
 			//save_vtk("sol"+std::to_string(iter)+".vtk", PSI, TAU, UVP);
 			//++iter;
@@ -188,6 +193,20 @@ int main(int argc, char ** argv)
 			{
 				int frame = iter/nframe;
 				save_vtk("out" + std::to_string(frame) + ".vtk", PSI, TAU, UVP);
+				save_vtk("tou" + std::to_string(frame) + ".vtk", PSI0, TAU0, UVP0);
+				int nx3 = pint::nx(3,level), ny3 = pint::ny(3,level);
+				for(int i = 1; i < nx3+1; ++i)
+					for(int j = 1; j < ny3+1; ++j)
+					{
+						pint pdof(3,i,j,level);
+						flux_advection(PSI,UVP,pdof,TAU1(0,pdof));
+						//mat2 val;
+						//fill_grad(UVP,pdof,val);
+						//TAU1(0,pdof)[0] = val[0];
+						//TAU1(0,pdof)[1] = val[3];
+						//TAU1(0,pdof)[2] = val[2];
+					}
+				save_vtk("tuo" + std::to_string(frame) + ".vtk", PSI1, TAU1, UVP);
 			}
 			++iter;
 			finish = res < atol && t > T;

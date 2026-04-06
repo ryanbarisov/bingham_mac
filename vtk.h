@@ -8,7 +8,10 @@ void save_vtk(std::string filename, const dof_vector<symmat2>& psi, const dof_ve
 {
 	std::ofstream ofs(filename);
 
-	int n1 = pint::nx(1,level), n2 = pint::ny(2,level);
+	int nx1 = pint::nx(1,level), ny1 = pint::ny(1,level);
+	int nx2 = pint::nx(2,level), ny2 = pint::ny(2,level);
+	int nx3 = pint::nx(3,level), ny3 = pint::ny(3,level);
+	int n1 = nx3+1, n2 = ny3+1; // amount of points
 	//version,identifier
 	ofs << "# vtk DataFile Version 3.0\n";
 	//header
@@ -40,14 +43,14 @@ void save_vtk(std::string filename, const dof_vector<symmat2>& psi, const dof_ve
 	//pressure
 	ofs << "SCALARS pressure double 1\n";
 	ofs << "LOOKUP_TABLE default\n";
-	for(int j = 1; j < n2; ++j)
-		for(int i = 1; i < n1; ++i)
+	for(int j = 1; j < ny3+1; ++j)
+		for(int i = 1; i < nx3+1; ++i)
 			ofs << x(2,pint(3,i,j,level)) << '\n';
 	//divergence
 	ofs << "SCALARS div_U double 1\n";
 	ofs << "LOOKUP_TABLE default\n";
-	for(int j = 1; j < n2; ++j)
-		for(int i = 1; i < n1; ++i)
+	for(int j = 1; j < ny3+1; ++j)
+		for(int i = 1; i < nx3+1; ++i)
 	{
 		double divu = 0.0;
 		pint dofs[8], dof = pint(3,i,j,level);
@@ -56,7 +59,7 @@ void save_vtk(std::string filename, const dof_vector<symmat2>& psi, const dof_ve
 			if( dofs[q].inside() )
 				divu += x(dofs[q].grid-1,dofs[q]) * dofs[q].coef;
 			else
-				divu += exact(test, q < 2 ? 1 : 2, dofs[q].x(), dofs[q].y()) * dofs[q].coef;
+				divu += exact(test, dofs[q].grid, dofs[q].x(), dofs[q].y()) * dofs[q].coef;
 		ofs << divu << '\n';
 	}
 	// tau
@@ -65,8 +68,8 @@ void save_vtk(std::string filename, const dof_vector<symmat2>& psi, const dof_ve
 	{
 		ofs << "SCALARS " << tau_name[k] << " double 1\n";
 		ofs << "LOOKUP_TABLE default\n";
-		for(int j = 1; j < n2; ++j)
-			for(int i = 1; i < n1; ++i)
+		for(int j = 1; j < ny3+1; ++j)
+			for(int i = 1; i < nx3+1; ++i)
 		{
 			pint pdof(3,i,j,level);
 			double tau_ij = tau(0,pdof)[k];
@@ -80,8 +83,8 @@ void save_vtk(std::string filename, const dof_vector<symmat2>& psi, const dof_ve
 	{
 		ofs << "SCALARS " << psi_name[k] << " double 1\n";
 		ofs << "LOOKUP_TABLE default\n";
-		for(int j = 1; j < n2; ++j)
-			for(int i = 1; i < n1; ++i)
+		for(int j = 1; j < ny3+1; ++j)
+			for(int i = 1; i < nx3+1; ++i)
 		{
 			pint pdof(3,i,j,level);
 			double psi_ij = psi(0,pdof)[k];
@@ -92,12 +95,12 @@ void save_vtk(std::string filename, const dof_vector<symmat2>& psi, const dof_ve
 	// u
 	ofs << "SCALARS U double 2\n";
 	ofs << "LOOKUP_TABLE default\n";
-	for(int j = 1; j < n2; ++j)
-		for(int i = 0; i < n1-1; ++i)
+	for(int j = 1; j < ny3+1; ++j)
+		for(int i = 1; i < nx3+1; ++i)
 		{
 			for(int q = 0; q < 2; ++q)
 			{
-				pint pdof(1,i+q,j  ,level);
+				pint pdof(1,i-1+q,j  ,level);
 				double u;
 				if(pdof.inside()) u = x(0, pdof);
 				else u = exact(test, 1, pdof.x(), pdof.y());
@@ -108,12 +111,12 @@ void save_vtk(std::string filename, const dof_vector<symmat2>& psi, const dof_ve
 	// v
 	ofs << "SCALARS V double 2\n";
 	ofs << "LOOKUP_TABLE default\n";
-	for(int j = 0; j < n2-1; ++j)
-		for(int i = 1; i < n1; ++i)
+	for(int j = 1; j < ny3+1; ++j)
+		for(int i = 1; i < nx3+1; ++i)
 		{
 			for(int q = 0; q < 2; ++q)
 			{
-				pint pdof(2,i ,j+q,level);
+				pint pdof(2,i ,j-1+q,level);
 				double v;
 				if(pdof.inside()) v = x(1, pdof);
 				else v = exact(test, 2, pdof.x(), pdof.y());
@@ -139,7 +142,10 @@ void save_vtk_poisson(std::string filename, const dof_vector<double>& x, int lev
 {
 	std::ofstream ofs(filename);
 
-	int n1 = pint::nx(1,level), n2 = pint::ny(2,level);
+	int nx1 = pint::nx(1,level), ny1 = pint::ny(1,level);
+	int nx2 = pint::nx(2,level), ny2 = pint::ny(2,level);
+	int nx3 = pint::nx(3,level), ny3 = pint::ny(3,level);
+	int n1 = nx3+1, n2 = ny3+1; // amount of points
 	//version,identifier
 	ofs << "# vtk DataFile Version 3.0\n";
 	//header
@@ -171,8 +177,8 @@ void save_vtk_poisson(std::string filename, const dof_vector<double>& x, int lev
 	//pressure
 	ofs << "SCALARS pressure double 1\n";
 	ofs << "LOOKUP_TABLE default\n";
-	for(int j = 1; j < n2; ++j)
-		for(int i = 1; i < n1; ++i)
+	for(int i = 1; i < nx3+1; ++i)
+		for(int j = 1; j < ny3+1; ++j)
 			ofs << x(0,pint(3,i,j,level)) << '\n';
 	ofs.close();
 }

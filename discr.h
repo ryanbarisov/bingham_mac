@@ -13,19 +13,19 @@ extern int level0;
 void laplace(const pint& pdof, pint * dofs1, pint * dofs2, double mult)
 {
 	int i = pdof.i, j = pdof.j, grid = pdof.grid, level = pdof.level;
-	double hx = pint::hx(level), hy = pint::hy(level), hx0 = pint::hx(level0), hy0 = pint::hy(level0);
+	double hx = pint::hx(level), hy = pint::hy(level);
 	if(grid == 1) // \Delta_h, x component
 	{
 		// Uh
 		double h[4] = {hx,hx,hy,hy};
-		dofs1[0] = pint(1,i+1,j,level); h[0] = dofs1[0].inside() ? hx : 0.5*hx0;
-		dofs1[1] = pint(1,i-1,j,level); h[1] = dofs1[1].inside() ? hx : 0.5*hx0;
-		dofs1[0].coef = 2./(h[0]*(h[0]+h[1])) * mult;//dofs1[0].coef = 1.0/(hx*h[0]) * mult;
-		dofs1[1].coef = 2./(h[1]*(h[0]+h[1])) * mult;//dofs1[1].coef = 1.0/(hx*h[1]) * mult;
-		dofs1[2] = pint(1,i,j+1,level); h[2] = 0.5*hy + 0.5*(dofs1[2].inside() ? hy : hy0);
-		dofs1[3] = pint(1,i,j-1,level); h[3] = 0.5*hy + 0.5*(dofs1[3].inside() ? hy : hy0);
-		dofs1[2].coef = 2./(h[2]*(h[2]+h[3])) * mult;//1.0/(hy*h[2]) * mult;
-		dofs1[3].coef = 2./(h[3]*(h[2]+h[3])) * mult;//1.0/(hy*h[3]) * mult;
+		dofs1[0] = pint(1,i+1,j,level);
+		dofs1[1] = pint(1,i-1,j,level);
+		dofs1[0].coef = 1./(hx*hx) * mult;
+		dofs1[1].coef = 1./(hx*hx) * mult;
+		dofs1[2] = pint(1,i,j+1,level); if(!dofs1[2].inside()) h[2] = 0.5*hy;
+		dofs1[3] = pint(1,i,j-1,level); if(!dofs1[3].inside()) h[3] = 0.5*hy;
+		dofs1[2].coef = 2./(h[2]*(h[2]+h[3])) * mult;
+		dofs1[3].coef = 2./(h[3]*(h[2]+h[3])) * mult;
 		dofs1[4] = pint(1,i,j  ,level); dofs1[4].coef = 0.0;
 		for(int k = 0; k < 4; ++k) dofs1[4].coef -= dofs1[k].coef;
 	}
@@ -33,28 +33,28 @@ void laplace(const pint& pdof, pint * dofs1, pint * dofs2, double mult)
 	{
 		// Vh
 		double h[4] = {hy,hy,hx,hx};
-		dofs2[0] = pint(2,i,j+1,level); h[0] = dofs2[0].inside() ? hy : 0.5*hy0;
-		dofs2[1] = pint(2,i,j-1,level); h[1] = dofs2[1].inside() ? hy : 0.5*hy0;
-		dofs2[0].coef = 2./(h[0]*(h[0]+h[1])) * mult;//1.0/(hy*h[0]) * mult;
-		dofs2[1].coef = 2./(h[1]*(h[0]+h[1])) * mult;//1.0/(hy*h[1]) * mult;
-		dofs2[2] = pint(2,i+1,j,level); h[2] = 0.5*hx + 0.5*(dofs2[2].inside() ? hx : hx0);
-		dofs2[3] = pint(2,i-1,j,level); h[3] = 0.5*hx + 0.5*(dofs2[3].inside() ? hx : hx0);
-		dofs2[2].coef = 2./(h[2]*(h[2]+h[3])) * mult;//1.0/(hx*h[2]) * mult;
-		dofs2[3].coef = 2./(h[3]*(h[2]+h[3])) * mult;//1.0/(hx*h[3]) * mult;
+		dofs2[0] = pint(2,i,j+1,level);
+		dofs2[1] = pint(2,i,j-1,level);
+		dofs2[0].coef = 1./(hy*hy) * mult;
+		dofs2[1].coef = 1./(hy*hy) * mult;
+		dofs2[2] = pint(2,i+1,j,level); if(!dofs2[2].inside()) h[2] = 0.5*hx;
+		dofs2[3] = pint(2,i-1,j,level); if(!dofs2[3].inside()) h[3] = 0.5*hx;
+		dofs2[2].coef = 2./(h[2]*(h[2]+h[3])) * mult;
+		dofs2[3].coef = 2./(h[3]*(h[2]+h[3])) * mult;
 		dofs2[4] = pint(2,i,j  ,level); dofs2[4].coef = 0.0;
 		for(int k = 0; k < 4; ++k) dofs2[4].coef -= dofs2[k].coef;
 	}
 	else if(grid == 3) // \Delta_h on Ph
 	{
 		double h[4] = {hx,hx,hy,hy};
-		dofs1[0] = pint(3,i+1,j,level); h[0] = 0.5*hx + 0.5*(dofs1[0].inside() ? hx : hx0);
-		dofs1[1] = pint(3,i-1,j,level); h[1] = 0.5*hx + 0.5*(dofs1[1].inside() ? hx : hx0);
-		dofs1[0].coef = 2./(h[0]*(h[0]+h[1])) * mult;//1.0/(hx*h[0]) * mult;
-		dofs1[1].coef = 2./(h[1]*(h[0]+h[1])) * mult;//1.0/(hx*h[1]) * mult;
-		dofs1[2] = pint(3,i,j+1,level); h[2] = 0.5*hy + 0.5*(dofs1[2].inside() ? hy : hy0);
-		dofs1[3] = pint(3,i,j-1,level); h[3] = 0.5*hy + 0.5*(dofs1[3].inside() ? hy : hy0);
-		dofs1[2].coef = 2./(h[2]*(h[2]+h[3])) * mult;//1.0/(hy*h[2]) * mult;
-		dofs1[3].coef = 2./(h[3]*(h[2]+h[3])) * mult;//1.0/(hy*h[3]) * mult;
+		dofs1[0] = pint(3,i+1,j,level); if(!dofs1[0].inside()) h[0] = 0.5*hx;
+		dofs1[1] = pint(3,i-1,j,level); if(!dofs1[1].inside()) h[1] = 0.5*hx;
+		dofs1[0].coef = 2./(h[0]*(h[0]+h[1])) * mult;
+		dofs1[1].coef = 2./(h[1]*(h[0]+h[1])) * mult;
+		dofs1[2] = pint(3,i,j+1,level); if(!dofs1[2].inside()) h[2] = 0.5*hy;
+		dofs1[3] = pint(3,i,j-1,level); if(!dofs1[3].inside()) h[3] = 0.5*hy;
+		dofs1[2].coef = 2./(h[2]*(h[2]+h[3])) * mult;
+		dofs1[3].coef = 2./(h[3]*(h[2]+h[3])) * mult;
 		dofs1[4] = pint(3,i,j  ,level); dofs1[4].coef = 0.0;
 		for(int k = 0; k < 4; ++k) dofs1[4].coef -= dofs1[k].coef;
 	}
@@ -74,7 +74,7 @@ int div(const pint& pdof, pint * dofs1)
 	return 4;
 }
 
-// TODO: dp/dn = 0 on boundaries, needs review if otherwise
+// dp/dn = 0 on boundaries, needs review if otherwise
 int grad(const pint& pdof, pint * dofs3)
 {
 	int i = pdof.i, j = pdof.j, grid = pdof.grid, level = pdof.level;
@@ -85,7 +85,7 @@ int grad(const pint& pdof, pint * dofs3)
 		dofs3[0] = pint(3,i+1,j,level); dofs3[0].coef =  1.0 / hx;
 		dofs3[1] = pint(3,i,j  ,level); dofs3[1].coef = -1.0 / hx;
 	}
-	else //if(dir == 2) // y
+	else //if(grid == 2) // y
 	{
 		assert(grid == 2);
 		dofs3[0] = pint(3,i,j+1,level); dofs3[0].coef =  1.0 / hy;
@@ -110,10 +110,12 @@ int div_tau(const pint& pdof, std::array<pint,6>& dofs)
 		dofs[3] = pint(3,i+1,j+1,level);
 		dofs[2].coef =  0.5 / hy;
 		dofs[3].coef =  0.5 / hy;
+		bool one_sided = false;
 		if(!dofs[2].inside() || !dofs[3].inside())
 		{
-			dofs[2] = pint(3,i  ,j,level);dofs[2].coef *= 2;
-			dofs[3] = pint(3,i+1,j,level);dofs[3].coef *= 2;
+			dofs[2] = pint(3,i  ,j,level);
+			dofs[3] = pint(3,i+1,j,level);
+			one_sided = true;
 		}
 		dofs[4] = pint(3,i  ,j-1,level);
 		dofs[5] = pint(3,i+1,j-1,level);
@@ -121,8 +123,14 @@ int div_tau(const pint& pdof, std::array<pint,6>& dofs)
 		dofs[5].coef = -0.5 / hy;
 		if(!dofs[4].inside() || !dofs[5].inside())
 		{
-			dofs[4] = pint(3,i  ,j,level);dofs[4].coef *= 2;
-			dofs[5] = pint(3,i+1,j,level);dofs[5].coef *= 2;
+			dofs[4] = pint(3,i  ,j,level); dofs[4].coef *= 2;
+			dofs[5] = pint(3,i+1,j,level); dofs[5].coef *= 2;
+			one_sided = true;
+		}
+		if(one_sided)
+		{
+			dofs[2].coef = dofs[3].coef =  1.0 / hy;
+			dofs[4].coef = dofs[5].coef = -1.0 / hy;
 		}
 	}
 	else //if(grid == 2) // y
@@ -138,10 +146,12 @@ int div_tau(const pint& pdof, std::array<pint,6>& dofs)
 		dofs[3] = pint(3,i+1,j+1,level);
 		dofs[2].coef =  0.5 / hx;
 		dofs[3].coef =  0.5 / hx;
+		bool one_sided = false;
 		if(!dofs[2].inside() || !dofs[3].inside())
 		{
-			dofs[2] = pint(3,i,j  ,level);dofs[2].coef *= 2;
-			dofs[3] = pint(3,i,j+1,level);dofs[3].coef *= 2;
+			dofs[2] = pint(3,i,j  ,level);
+			dofs[3] = pint(3,i,j+1,level);
+			one_sided = true;
 		}
 		dofs[4] = pint(3,i-1,j  ,level);
 		dofs[5] = pint(3,i-1,j+1,level);
@@ -149,8 +159,14 @@ int div_tau(const pint& pdof, std::array<pint,6>& dofs)
 		dofs[5].coef = -0.5 / hx;
 		if(!dofs[4].inside() || !dofs[5].inside())
 		{
-			dofs[4] = pint(3,i,j  ,level);dofs[4].coef *= 2;
-			dofs[5] = pint(3,i,j+1,level);dofs[5].coef *= 2;
+			dofs[4] = pint(3,i,j  ,level);
+			dofs[5] = pint(3,i,j+1,level);
+			one_sided = true;
+		}
+		if(one_sided)
+		{
+			dofs[2].coef = dofs[3].coef =  1.0 / hx;
+			dofs[4].coef = dofs[5].coef = -1.0 / hx;
 		}
 	}
 	return 6;
@@ -161,11 +177,12 @@ void fill_rhs(const dof_vector<symmat2>& tau, dof_vector<double>& b, double mult
 	std::array<pint,6> dofs;
 	int ndofs = 6;
 	int level = 0; // TODO
-	int n1 = pint::nx(1,level), n2 = pint::ny(2,level);
+	int nx1 = pint::nx(1,level), ny1 = pint::ny(1,level);
+	int nx2 = pint::nx(2,level), ny2 = pint::ny(2,level);
 	double scale = pint::hx(level)*pint::hy(level);
 	// grid1
-	for(int i = 0; i < n1; ++i)
-		for(int j = 1; j < n2; ++j)
+	for(int i = 1; i < nx1+1; ++i)
+		for(int j = 1; j < ny1+1; ++j)
 	{
 		pint pdof(1,i,j,level);
 		div_tau(pdof,dofs);
@@ -180,8 +197,8 @@ void fill_rhs(const dof_vector<symmat2>& tau, dof_vector<double>& b, double mult
 		}
 	}
 	// grid2
-	for(int j = 0; j < n2; ++j)
-		for(int i = 1; i < n1; ++i)
+	for(int j = 1; j < ny2+1; ++j)
+		for(int i = 1; i < nx2+1; ++i)
 	{
 		pint pdof(2,i,j,level);
 		div_tau(pdof,dofs);
@@ -260,22 +277,22 @@ void flux_advection(const dof_vector<symmat2>& psi, const dof_vector<double>& x,
 
 	Nc[0] = Nc[1] = Nc[2] = 0.0;
 	reconstruct(psi, pdof, PSI_PLUS, PSI_MINUS, 0); // +x
-	u1 = x(0,pu1);//x(0,i,j,level);
+	u1 = pu1.inside() ? x(0,pu1) : exact(test,1,pu1.x(),pu1.y());//x(0,i,j,level);
 	for(int q = 0; q < 3; ++q)
 		H1[q] = u1*0.5*(PSI_PLUS[q]+PSI_MINUS[q]) - c * fabs(u1)*(PSI_PLUS[q] - PSI_MINUS[q]);
 	reconstruct(psi, pdof, PSI_PLUS, PSI_MINUS, 1); // -x
-	u0 = x(0,pu0);//x(0,i-1,j,level);
+	u0 = pu0.inside() ? x(0,pu0) : exact(test,1,pu0.x(),pu0.y());//x(0,i-1,j,level);
 	for(int q = 0; q < 3; ++q)
 		H0[q] = u0*0.5*(PSI_PLUS[q]+PSI_MINUS[q]) - c * fabs(u0)*(PSI_PLUS[q] - PSI_MINUS[q]);
 	for(int q = 0; q < 3; ++q)
 		Nc[q] += (H1[q]-H0[q])/hx;
 
 	reconstruct(psi, pdof, PSI_PLUS, PSI_MINUS, 2); // +y
-	v1 = x(1,pv1);//x(1,i,j,level);
+	v1 = pv1.inside() ? x(1,pv1) : exact(test,2,pv1.x(),pv1.y());//x(1,i,j,level);
 	for(int q = 0; q < 3; ++q)
 		H1[q] = v1*0.5*(PSI_PLUS[q]+PSI_MINUS[q]) - c * fabs(v1)*(PSI_PLUS[q] - PSI_MINUS[q]);
 	reconstruct(psi, pdof, PSI_PLUS, PSI_MINUS, 3); // -y
-	v0 = x(1,pv0);//x(1,i,j-1,level);
+	v0 = pv0.inside() ? x(1,pv0) : exact(test,2,pv0.x(),pv0.y());//x(1,i,j-1,level);
 	for(int q = 0; q < 3; ++q)
 		H0[q] = v0*0.5*(PSI_PLUS[q]+PSI_MINUS[q]) - c * fabs(v0)*(PSI_PLUS[q] - PSI_MINUS[q]);
 	for(int q = 0; q < 3; ++q)
@@ -341,11 +358,11 @@ void fill_grad(const dof_vector<double>& U, const pint& pdof, mat2& GU)
 	double u1, u0, v1, v0;
 	int i = pdof.i, j = pdof.j, level = pdof.level;
 	pint p11(1,i,j,level), p10(1,i-1,j,level), p01(2,i,j,level), p00(2,i,j-1,level);
-	double hx = pint::hx(level), hy = pint::hy(level);
-	u1 = U(0,p11);
-	u0 = U(0,p10);
-	v1 = U(1,p01);
-	v0 = U(1,p00);
+	double hx = pint::hx(level), hy = pint::hy(level), h;
+	u1 = p11.inside() ? U(0,p11) : exact(test,1,p11.x(),p11.y());
+	u0 = p10.inside() ? U(0,p10) : exact(test,1,p10.x(),p10.y());
+	v1 = p01.inside() ? U(1,p01) : 0;//exact(test,2,p01.x(),p01.y());
+	v0 = p00.inside() ? U(1,p00) : exact(test,2,p00.x(),p00.y());
 	GU[0] = (u1-u0)/hx; //u_x
 	GU[3] = (v1-v0)/hy; //v_y
 	//u_y
@@ -353,29 +370,44 @@ void fill_grad(const dof_vector<double>& U, const pint& pdof, mat2& GU)
 	p10 = pint(1,i-1,j+1,level);
 	p01 = pint(1,i  ,j-1,level);
 	p00 = pint(1,i-1,j-1,level);
+
+	h = 2*hy;
 	if(p10.inside() && p11.inside())
 		u1 = 0.5*( U(0,p11) + U(0,p10) );
 	else
+	{
 		u1 = exact(test, 1, 0.5*(p11.x()+p10.x()), 0.5*(p11.y()+p10.y()) );
+		h = 1.5*hy;
+	}
 	if(p00.inside() && p01.inside())
 		u0 = 0.5*( U(0,p01) + U(0,p00) );
 	else
+	{
 		u0 = exact(test, 1, 0.5*(p01.x()+p00.x()), 0.5*(p01.y()+p00.y()) );
-	GU[2] = (u1-u0)/(2*hy); // u_y
+		h = 1.5*hy;
+	}
+	GU[2] = (u1-u0)/h; // u_y
 	//v_x
 	p11 = pint(2,i+1,j  ,level);
 	p10 = pint(2,i+1,j-1,level);
 	p01 = pint(2,i-1,j  ,level);
 	p00 = pint(2,i-1,j-1,level);
+	h = 2*hx;
 	if(p10.inside() && p11.inside())
 		v1 = 0.5*( U(1,p11) + U(1,p10) );
 	else
+	{
 		v1 = exact(test, 2, 0.5*(p11.x()+p10.x()), 0.5*(p11.y()+p10.y()) );
+		h = 1.5*hx;
+	}
 	if(p00.inside() && p01.inside())
 		v0 = 0.5*( U(1,p01) + U(1,p00) );
 	else
+	{
 		v0 = exact(test, 2, 0.5*(p01.x()+p00.x()), 0.5*(p01.y()+p00.y()) );
-	GU[1] = (v1-v0)/(2*hx); // v_x
+		h = 1.5*hx;
+	}
+	GU[1] = (v1-v0)/h; // v_x
 }
 
 void update_psi(const dof_vector<double>& x, const dof_vector<double>& x0, dof_vector<symmat2>& psi, dof_vector<symmat2>& psi0, dof_vector<symmat2>& psi1)
@@ -384,9 +416,9 @@ void update_psi(const dof_vector<double>& x, const dof_vector<double>& x0, dof_v
 	double a0 = (2*time_rel+1)/(time_rel+1), a1 = -(1+time_rel), a2 = time_rel*time_rel/(1+time_rel);
 	double b1 = 1+time_rel, b2 = -time_rel;
 	int level = 0; // TODO
-	int n1 = pint::nx(1,level), n2 = pint::ny(2,level);
-	for(int i = 1; i < n1; ++i)
-		for(int j = 1; j < n2; ++j)
+	int nx3 = pint::nx(3,level), ny3 = pint::ny(3,level);
+	for(int i = 1; i < nx3+1; ++i)
+		for(int j = 1; j < ny3+1; ++j)
 	{
 		pint pdof(3,i,j,level);
 		mat2 OMEGA, OMEGA0, GU, GU0;
@@ -436,10 +468,10 @@ void update_tau(const dof_vector<symmat2>& psi, dof_vector<symmat2>& tau1, dof_v
 	int level = 0; // TODO
 	// remember tau before it is overwritten
 	tau1.assign(tau,level);
-	int n1 = pint::nx(1,level), n2 = pint::ny(2,level);
+	int nx3 = pint::nx(3,level), ny3 = pint::ny(3,level);
 	// update tau: tau = g(exp(psi)) / We * (exp(psi) -I)
-	for(int i = 1; i < n1; ++i)
-		for(int j = 1; j < n2; ++j)
+	for(int i = 1; i < nx3+1; ++i)
+		for(int j = 1; j < ny3+1; ++j)
 	{
 		pint pdof(3,i,j,level);
 		symmat2 ePSI, eLMBD;
@@ -460,11 +492,11 @@ void update_tau(const dof_vector<symmat2>& psi, dof_vector<symmat2>& tau1, dof_v
 double residual(const dof_vector<symmat2>& tau0, const dof_vector<symmat2>& tau)
 {
 	int level = 0; // TODO
-	int n1 = pint::nx(1,level), n2 = pint::ny(2,level);
+	int nx3 = pint::nx(3,level), ny3 = pint::ny(3,level);
 	double hx = pint::hx(level), hy = pint::hy(level);
 	double l2norm = 0.0;
-	for(int i = 1; i < n1; ++i)
-		for(int j = 1; j < n2; ++j)
+	for(int i = 1; i < nx3+1; ++i)
+		for(int j = 1; j < ny3+1; ++j)
 	{
 		pint pdof(3,i,j,level);
 		double err = 0.0;

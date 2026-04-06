@@ -9,7 +9,7 @@ extern int test;
 void fill_poisson(dof_vector<double>& RHS, multigrid_level* mgl, bool resid)
 {
 	int level = mgl->level;
-	int n1 = pint::nx(1,level), n2 = pint::ny(2,level);
+	int nx3 = pint::nx(3,level), ny3 = pint::ny(3,level);
 	double hx = pint::hx(level), hy = pint::hy(level);
 	double scale = pint::hx(level0)*pint::hy(level0);//hx*hy;
 	const gmg_layout& lay1 = *(RHS.lay);
@@ -21,8 +21,8 @@ void fill_poisson(dof_vector<double>& RHS, multigrid_level* mgl, bool resid)
 
 	pint dofs1[5], dofs2[5], dofs3[2];
 	// div grad u = 0, equations for Ph
-	for(int i = 1; i < n1; ++i)
-		for(int j = 1; j < n2; ++j)
+	for(int i = 1; i < nx3+1; ++i)
+		for(int j = 1; j < ny3+1; ++j)
 	{
 		pint pdof(3,i,j,level);
 		int k = lay1.dof(pdof, 0);
@@ -58,19 +58,20 @@ void gs_smoother(int i, int j, dof_vector<double>& UVP, dof_vector<double>& RHS,
 }
 void gs_smoother(int iters, dof_vector<double>& UVP, dof_vector<double>& RHS, int level)
 {
-	int n1 = pint::nx(1,level), n2 = pint::ny(2,level);
+	int nx3 = pint::nx(3,level), ny3 = pint::ny(3,level);
 	static bool fwd = 0;
 	for(int k = 0; k < iters; ++k)
 	{
-		if(k % 2 == fwd)
+		//if(k % 2 == fwd)
+		if(fwd)
 		{
-		for(int i = 1; i < n1; ++i)
-			for(int j = 1; j < n2; ++j)
+		for(int i = 1; i < nx3+1; ++i)
+			for(int j = 1; j < ny3+1; ++j)
 				gs_smoother(i,j,UVP,RHS,level);
 		}
 		else
-		for(int i = n1-1; i >= 1; --i)
-			for(int j = n2-1; j >= 1; --j)
+		for(int i = nx3; i >= 1; --i)
+			for(int j = ny3; j >= 1; --j)
 				gs_smoother(i,j,UVP,RHS,level);
 	}
 	fwd = !fwd;
@@ -110,10 +111,10 @@ struct gmg_poisson : multigrid
 void gmg_poisson::restriction(dof_vector<double>& U, multigrid_level* mgl)
 {
 	int level = mgl->level;
-	int n1 = pint::nx(1,level+1), n2 = pint::ny(2,level+1);
+	int nx3 = pint::nx(3,level+1), ny3 = pint::ny(3,level+1);
 	// cycle over CV of coarse cells
-	for(int iC = 1; iC < n1; ++iC)
-		for(int jC = 1; jC < n2; ++jC)
+	for(int iC = 1; iC < nx3+1; ++iC)
+		for(int jC = 1; jC < ny3+1; ++jC)
 	{
 		int iF1 = 2*iC-1, iF2 = 2*iC, jF1 = 2*jC-1, jF2 = 2*jC;
 		pint pC(3,iC,jC,level+1), pF11(3,iF1,jF1,level), pF12(3,iF1,jF2,level), pF21(3,iF2,jF1,level), pF22(3,iF2,jF2,level);
@@ -125,11 +126,11 @@ void gmg_poisson::prolongation(multigrid_level* mgl)
 {
 	dof_vector<double>& U = UVP;
 	int level = mgl->level;
-	int n1 = pint::nx(1,level), n2 = pint::ny(2,level);
+	int nx3 = pint::nx(3,level), ny3 = pint::ny(3,level);
 	static const double pcoef[4] = {9./16, 3./16, 3./16, 1./16};
 	// cycle over CV of coarse cells
-	for(int iC = 0; iC < n1; ++iC)
-		for(int jC = 0; jC < n2; ++jC)
+	for(int iC = 0; iC < nx3+1; ++iC)
+		for(int jC = 0; jC < ny3+1; ++jC)
 	{
 		pint dofC00 = pint(3,iC,jC,level), dofC01 = pint(3,iC,jC+1,level), dofC10 = pint(3,iC+1,jC,level), dofC11 = pint(3,iC+1,jC+1,level);
 		double pC00, pC01, pC10, pC11;
@@ -140,8 +141,8 @@ void gmg_poisson::prolongation(multigrid_level* mgl)
 		// use dp/dn = 0 near boundary
 		if(iC == 0)	{pC00 = pC10; pC01 = pC11;}
 		if(jC == 0)	{pC00 = pC01; pC10 = pC11;}
-		if(iC == n1-1)	{pC10 = pC00; pC11 = pC01;}
-		if(jC == n2-1)	{pC01 = pC00; pC11 = pC10;}
+		if(iC == nx3)	{pC10 = pC00; pC11 = pC01;}
+		if(jC == ny3)	{pC01 = pC00; pC11 = pC10;}
 		int iF = 2*iC, jF = 2*jC;
 		pint dofF00 = pint(3,iF,jF,level-1), dofF01 = pint(3,iF,jF+1,level-1), dofF10 = pint(3,iF+1,jF,level-1), dofF11 = pint(3,iF+1,jF+1,level-1);
 		double pF00, pF01, pF10, pF11;

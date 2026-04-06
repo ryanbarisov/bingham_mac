@@ -16,41 +16,38 @@ int main2(int argc, char ** argv)
 	if(argc > 1)
 		glev = atoi(argv[1]);
 	pint::glev = glev;
-	int nx[3], ny[3];
-	for(int k = 0; k < 3; ++k)
+	for(int level = 0; level < 3; ++level)
 	{
-		nx[k] = pint::nx(1,k);
-		ny[k] = pint::ny(2,k);
-		std::cout << "level " << k << " nx " << nx[k] << " ny " << ny[k]  << std::endl;
-		int level = k;
-		int n1 = nx[level], n2 = ny[level];
+		int nx1 = pint::nx(1,level), ny1 = pint::ny(1,level);
+		int nx2 = pint::nx(2,level), ny2 = pint::ny(2,level);
+		int nx3 = pint::nx(3,level), ny3 = pint::ny(3,level);
+		std::cout << "level " << level << " nx " << nx3 << " ny " << ny3 << std::endl;
 		double hx = pint::hx(level), hy = pint::hy(level);
-		double hx0 = pint::hx(0), hy0 = pint::hy(0);
-		for(int i = 0; i < n1; ++i)
-			for(int j = 1; j < n2; ++j)
+		for(int i = 1; i < nx1+1; ++i)
+			for(int j = 1; j < ny1+1; ++j)
 		{
 			pint pdof(1,i,j,level);
 			assert(pdof.inside());
-			if(i == 0) assert(fabs(pdof.x()-0.5*hx0) < 1.0e-6*hx);
-			if(i == n1-1) assert(fabs(pdof.x()-(1-0.5*hx0)) < 1.0e-6*hx);
+			if(i == 1) assert(fabs(pdof.x()-hx) < 1.0e-6*hx);
+			if(i == nx1) assert(fabs(pdof.x()-(1-hx)) < 1.0e-6*hx);
 		}
-		for(int j = 0; j < n2; ++j)
-			for(int i = 1; i < n1; ++i)
+		for(int j = 1; j < ny2+1; ++j)
+			for(int i = 1; i < nx2+1; ++i)
 		{
 			pint pdof(2,i,j,level);
 			assert(pdof.inside());
-			if(j == 0) assert(fabs(pdof.y()-0.5*hy0) < 1.0e-6*hy);
-			if(j == n2-1) assert(fabs(pdof.y()-(1-0.5*hy0)) < 1.0e-6*hy);
+			if(j == 1) assert(fabs(pdof.y()-hy) < 1.0e-6*hy);
+			if(j == ny2) assert(fabs(pdof.y()-(1-hy)) < 1.0e-6*hy);
 		}
-		for(int i = 1; i < n1; ++i)
-			for(int j = 1; j < n2; ++j)
+		for(int i = 1; i < nx3+1; ++i)
+			for(int j = 1; j < ny3+1; ++j)
 		{
 			pint pdof(3,i,j,level);
 			assert(pdof.inside());
-			if(i == 1) assert(fabs(pdof.x()-0.5*(hx+hx0)) < 1.0e-6*hx);
-			if(i == n1-1) assert(fabs(pdof.x()-(1-0.5*(hx+hx0))) < 1.0e-6*hx);
-			if(j == 1) assert(fabs(pdof.y()-0.5*(hy+hy0)) < 1.0e-6*hy);
-			if(j == n2-1) assert(fabs(pdof.y()-(1-0.5*(hy+hy0))) < 1.0e-6*hy);
+			if(i == 1) assert(fabs(pdof.x()-0.5*hx) < 1.0e-6*hx);
+			if(i == nx3) assert(fabs(pdof.x()-(1-0.5*hx)) < 1.0e-6*hx);
+			if(j == 1) assert(fabs(pdof.y()-0.5*hy) < 1.0e-6*hy);
+			if(j == ny3) assert(fabs(pdof.y()-(1-0.5*hy)) < 1.0e-6*hy);
 		}
 	}
 
@@ -78,7 +75,8 @@ int main(int argc, char ** argv)
 	gmg_layout lay2(1,grids2,ncomps2,1);
 
 	multigrid_params common;
-	common.nlevels = nlevels; common.maxiters = 30; common.atol = 1.0e-8;
+	common.nlevels = nlevels; common.maxiters = 30;
+	common.rtol = 1.0e-5; common.atol = 1.0e-15;
 	common.smooth_iters = 8; common.schedule = 2;
 	common.integral_constraint = false;
 	gmg_poisson gmg(common, lay1);

@@ -17,49 +17,50 @@ typedef struct pint
 	pint(int grid = -1, int i = -10, int j = -10, int level = 0) : i(i), j(j), grid(grid), level(level) {}
 	static int nx(int grid, int level) // amount of unknowns in X direction depends on level
 	{
-		if(grid == 1 || grid == 4) return (1 << (glev-level)) + 1;
+		if(grid == 1 || grid == 4) return (1 << (glev-level)) - 1;
 		else return (1 << (glev-level)) + 0;
 	}
-	static int ny(int grid, int level) // amount of unknowns in X direction depends on level
+	static int ny(int grid, int level) // amount of unknowns in Y direction depends on level
 	{
-		if(grid == 2 || grid == 4) return (1 << (glev-level)) + 1;
+		if(grid == 2 || grid == 4) return (1 << (glev-level)) - 1;
 		else return (1 << (glev-level)) + 0;
 	}
-	static double hx(int level) { return 1.0/nx(1,level); }
-	static double hy(int level) { return 1.0/ny(2,level); }
+	static double hx(int level) { return 1.0/nx(3,level); }
+	static double hy(int level) { return 1.0/ny(3,level); }
 	static int ndofs(int grid, int level) { return nx(grid,level)*ny(grid,level); }
 	int dof() const
 	{
-		if(grid == 1) // Uh
-			return i*ny(grid,level) + (j-1);
+		//if(grid == 1) // Uh
+		//	return i*ny(grid,level) + (j-1);
 		if(grid == 2) // Vh
-			return j*nx(grid,level) + (i-1);
-		else if(grid == 3) // Ph
+			return (j-1)*nx(grid,level) + (i-1);
+		//else if(grid == 3) // Ph
+		else
 			return (i-1)*ny(grid,level) + (j-1);
-		else // if(grid == 4) // Qh
-			return i*ny(grid,level) + j;
+		//else // if(grid == 4) // Qh
+		//	return i*ny(grid,level) + j;
 	}
 	bool inside() const
 	{
-		int i1 = i, j1 = j;
-		if(grid == 1) j1--;
-		else if(grid == 2) i1--;
-		else if(grid == 3) i1--, j1--;
+		int i1 = i-1, j1 = j-1;
+		//if(grid == 1) i1--;
+		//else if(grid == 2) j1--;
+		//else if(grid == 3) i1--, j1--;
 		return i1 >= 0 && i1 < nx(grid,level) && j1 >= 0 && j1 < ny(grid,level);
 	}
 	double x() const
 	{
 		if(grid == 1 || grid == 4)
-			return std::min(std::max(0.0, (i*(1<<level)+0.5)*hx(0)), 1.0);
+			return std::min(std::max(0.0, i*hx(level)), 1.0);
 		else
-			return std::min(std::max(0.0, ( (i-0.5)*(1<<level) + 0.5 )*hx(0)), 1.0);
+			return std::min(std::max(0.0, (i-0.5)*hx(level)), 1.0);
 	}
 	double y() const
 	{
 		if(grid == 2 || grid == 4)
-			return std::min(std::max(0.0, (j*(1<<level)+0.5)*hy(0)), 1.0);
+			return std::min(std::max(0.0, j*hy(level)), 1.0);
 		else
-			return std::min(std::max(0.0, ( (j-0.5)*(1<<level) + 0.5 )*hy(0)), 1.0);
+			return std::min(std::max(0.0, (j-0.5)*hy(level)), 1.0);
 	}
 	bool operator==(const pint &other)
 	{

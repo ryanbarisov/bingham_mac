@@ -126,10 +126,8 @@ struct multigrid
 			if(iter == 0) resid0 = resid;
 			if(resid/resid0 < common.rtol || resid < common.atol) success = true;
 			else if(iter > common.maxiters) {success = false; break;}
-			//save_vtk("tmp"+std::to_string(iter+1)+".vtk", UVP, lay2);
-			//save_vtk_poisson("tmp"+std::to_string(iter+1)+".vtk", UVP);
 			++iter;
-			std::cout << "gmg iter " << iter << " resid " << resid << " resid/resid0 " << (resid/resid0) << std::endl;
+			std::cout << "gmg iter " << iter << " resid " << resid << " resid/resid0 " << (resid/resid0) << '\n';// << '\r' << std::flush;
 			//success = true;
 		} while(!success);
 		std::cout << "gmg: solved? " << success << " iters " << iter << std::endl;
@@ -174,12 +172,12 @@ void multigrid_coarse_level::solve()
 	std::fill(x->Begin(),x->End(),0.0);
 	bool success = S->Solve(*b,*x);
 	fill_vector(*x, ptr->UVP, level);
-	b->Save("b.txt");
+	/*b->Save("b.txt");
 	x->Save("x.txt");
 	int iters = S->Iterations();
 	double resid = S->Residual();
 	std::string reason = S->ReturnReason();
-	std::cout << (!success ? "not " : "") << "converged iters " << iters << " resid " << resid << " reason " << reason << std::endl;
+	std::cout << (!success ? "not " : "") << "converged iters " << iters << " resid " << resid << " reason " << reason << std::endl;*/
 }
 void multigrid_level::solve()
 {
@@ -195,7 +193,8 @@ void multigrid_level::solve()
 		//ptr->RHS.assign(ptr->RESID, level+1);
 	}
 	ptr->prolongation(next);
-	if(level == level0) ptr->smoothing(this);
+	if(level == level0)
+		ptr->smoothing(this);
 }
 
 #endif //_GMG_H
