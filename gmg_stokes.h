@@ -211,7 +211,7 @@ void gs_smoother(dof_vector<double>& UVP, const dof_vector<double>& RHS0, int le
 	int ndofs;
 	double RHS, D;
 
-	int iters = 1;
+	int iters = 8;
 	bool swp = iter%2==0;
 
 	int iU0 = 1, iU1 = nx1+1, diU = 1; if(swp) {iU0 = nx1; iU1 = 0; diU = -1;}
@@ -228,12 +228,10 @@ void gs_smoother(dof_vector<double>& UVP, const dof_vector<double>& RHS0, int le
 	{
 		pint pdof(1,i,j,level);
 		RHS = RHS0(0,pdof);
-		//RHS += level == level0 ? rhs_exact(test,pdof.grid,pdof.x(),pdof.y()) : 0.0;
+		RHS += level == level0 ? rhs_exact(test,pdof.grid,pdof.x(),pdof.y()) : 0.0;
 		ndofs = grad(pdof,dofs3);
-		if(test != 0 || (i != iU0 && i != iU1)) //skipping boundary gives BC dp/dx=0 (test = 0), some analytics may have dp/dx != 0
-			for(int q = 0; q < ndofs; ++q)
-				if(dofs3[q].inside())
-					RHS -= dofs3[q].coef*UVP(2,dofs3[q]);
+		for(int q = 0; q < ndofs; ++q) if(dofs3[q].inside())
+			RHS -= dofs3[q].coef*UVP(2,dofs3[q]);
 		EP(0,pdof) = RHS;
 	}
 	for(int j = jV0; j != jV1; j+=djV)
@@ -241,12 +239,10 @@ void gs_smoother(dof_vector<double>& UVP, const dof_vector<double>& RHS0, int le
 	{
 		pint pdof(2,i,j,level);
 		RHS = RHS0(1,pdof);
-		//RHS += level == level0 ? rhs_exact(test,pdof.grid,pdof.x(),pdof.y()) : 0.0;
+		RHS += level == level0 ? rhs_exact(test,pdof.grid,pdof.x(),pdof.y()) : 0.0;
 		ndofs = grad(pdof,dofs3);
-		if(test != 0 || (j != jV0 && j != jV1)) //skipping boundary gives BC dp/dx=0 (test = 0), some analytics may have dp/dx != 0
-			for(int q = 0; q < ndofs; ++q)
-				if(dofs3[q].inside())
-					RHS -= dofs3[q].coef*UVP(2,dofs3[q]);
+		for(int q = 0; q < ndofs; ++q) if(dofs3[q].inside())
+			RHS -= dofs3[q].coef*UVP(2,dofs3[q]);
 		EP(1,pdof) = RHS;
 	}
 	// solve A (UV) = EP = r_u using Gauss-Seidel inner iterations
@@ -288,7 +284,29 @@ void gs_smoother(dof_vector<double>& UVP, const dof_vector<double>& RHS0, int le
 			UVP(1,pdof) = RHS/D;
 		}
 	}
-	// Delta e_p = g - div(UV)
+	// update P += g - div(UV)
+	double Pmean = 0.0;
+	for(int i = iP0; i != iP1; i+=diP)
+		for(int j = jP0; j != jP1; j+=djP)
+	{
+		pint pdof(3,i,j,level);
+		RHS = RHS0(2,pdof);
+		ndofs = div(pdof,dofs1);
+		for(int q = 0; q < ndofs; ++q)
+			if(dofs1[q].inside())
+				RHS -= dofs1[q].coef*UVP(dofs1[q].grid-1, dofs1[q]);
+			else if(level == level0)
+				RHS -= dofs1[q].coef*exact(test,dofs1[q].grid,dofs1[q].x(),dofs1[q].y());
+		UVP(2,pdof) += RHS;
+		Pmean += UVP(2,pdof)*hx*hy;
+	}
+	for(int i = iP0; i != iP1; i+=diP)
+		for(int j = jP0; j != jP1; j+=djP)
+	{
+		pint pdof(3,i,j,level);
+		UVP(2,pdof) -= Pmean;
+	}
+	// A_p e_p = Delta e_p = g - div(UV)
 	for(int it = 0; it < iters; ++it)
 	{
 		for(int i = iP0; i != iP1; i+=diP)
@@ -320,10 +338,8 @@ void gs_smoother(dof_vector<double>& UVP, const dof_vector<double>& RHS0, int le
 	{
 		pint pdof(1,i,j,level);
 		ndofs = grad(pdof,dofs3);
-		if(test != 0 || (i != iU0 && i != iU1)) //skipping boundary gives BC dp/dx=0 (test = 0), some analytics may have dp/dx != 0
-			for(int q = 0; q < ndofs; ++q)
-				if(dofs3[q].inside() )
-					UVP(0,pdof) += dofs3[q].coef*EP(2,dofs3[q]);
+		for(int q = 0; q < ndofs; ++q) if(dofs3[q].inside() )
+			UVP(0,pdof) += dofs3[q].coef*EP(2,dofs3[q]);
 	}
 	// V += grad_y(EP)
 	for(int j = jV0; j != jV1; j+=djV)
@@ -331,37 +347,8 @@ void gs_smoother(dof_vector<double>& UVP, const dof_vector<double>& RHS0, int le
 	{
 		pint pdof(2,i,j,level);
 		ndofs = grad(pdof,dofs3);
-		if(test != 0 || (j != jV0 && j != jV1)) //skipping boundary gives BC dp/dx=0 (test = 0), some analytics may have dp/dy != 0
-			for(int q = 0; q < ndofs; ++q)
-				if( dofs3[q].inside() )
-					UVP(1,pdof) += dofs3[q].coef*EP(2,dofs3[q]);
-	}
-	// P -= Delta(EP) or P += div(UV) - g
-	double Pmean = 0.0;
-	for(int i = iP0; i != iP1; i+=diP)
-		for(int j = jP0; j != jP1; j+=djP)
-	{
-		pint pdof(3,i,j,level);
-		RHS = -RHS0(2,pdof);
-		ndofs = div(pdof,dofs1);
-		for(int q = 0; q < ndofs; ++q)
-			if(dofs1[q].inside())
-				RHS += dofs1[q].coef*UVP(dofs1[q].grid-1, dofs1[q]);
-			else if(level == level0)
-				RHS += dofs1[q].coef*exact(test,dofs1[q].grid,dofs1[q].x(),dofs1[q].y());
-		UVP(2,pdof) += RHS;
-		/*RHS = 0.0;
-		laplace(pdof,dofs1,dofs2,1.0);
-		for(int q = 0; q < 5; ++q) if(dofs1[q].inside())
-			RHS += dofs1[q].coef*EP(2,dofs1[q]);
-		UVP(2,pdof) -= RHS;*/
-		Pmean += UVP(2,pdof)*hx*hy;
-	}
-	for(int i = iP0; i != iP1; i+=diP)
-		for(int j = jP0; j != jP1; j+=djP)
-	{
-		pint pdof(3,i,j,level);
-		UVP(2,pdof) -= Pmean;
+		for(int q = 0; q < ndofs; ++q) if( dofs3[q].inside() )
+			UVP(1,pdof) += dofs3[q].coef*EP(2,dofs3[q]);
 	}
 }
 void gs_smoother(int iters, dof_vector<double>& UVP, const dof_vector<double>& RHS0, int level, dof_vector<double>& EP, dof_vector<double>& EP0)
@@ -369,7 +356,7 @@ void gs_smoother(int iters, dof_vector<double>& UVP, const dof_vector<double>& R
 	static bool fwd = true;
 	for(int k = 0; k < iters; ++k)
 		gs_smoother(UVP,RHS0,level,EP,EP0,fwd);
-	//fwd = !fwd;
+	fwd = !fwd;
 }
 
 // fill matrix corresponding to Stokes equations for U,V,P
@@ -502,9 +489,9 @@ struct gmg_stokes : multigrid
 	}
 	void smoothing(multigrid_level* mgl)
 	{
-		vanka_smoother(common.smooth_iters, UVP, RHS, mgl->level);
+		//vanka_smoother(common.smooth_iters, UVP, RHS, mgl->level);
 		// gauss-seidel smoother doesn't work for now:
-		//gs_smoother(common.smooth_iters, UVP, RHS, mgl->level,EP,EP0);
+		gs_smoother(common.smooth_iters, UVP, RHS, mgl->level,EP,EP0);
 	}
 	void restriction(dof_vector<double>& U, multigrid_level* mgl);
 	void prolongation(multigrid_level* mgl);

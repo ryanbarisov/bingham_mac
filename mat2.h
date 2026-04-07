@@ -20,29 +20,34 @@ typedef std::array<double,9> mat3;
 inline double det2(const symmat2& A) {return A[0]*A[1]-A[2]*A[2];}
 inline double det3(const mat3& A) {return A[0]*(A[4]*A[8]-A[5]*A[7]) - A[3]*(A[1]*A[8]-A[2]*A[7]) + A[6]*(A[1]*A[5]-A[2]*A[4]);}
 inline double tr(const symmat2& A) {return A[0]+A[1];}
+// Frobenius norm of symmetric 2x2 matrix
+inline double frobnorm(const symmat2& psi) {return sqrt(psi[0]*psi[0]+psi[1]*psi[1]+2*psi[2]*psi[2]);}
 
 void eigs(const symmat2& A, double eigvals[2], mat2& eigvecs)
 {
-	double discr = tr(A)*tr(A) - 4*det2(A), d1, d2;
+	static const bool scale = false;
+	symmat2 A1 = A;
+	double fnorm = frobnorm(A); if(scale && fnorm) { A1[0] /= fnorm; A1[1] /= fnorm; A1[2] /= fnorm; }
+	double discr = tr(A1)*tr(A1) - 4*det2(A1), d1, d2;
 	if(discr < -1.0e-15) throw "Negative discriminant, should not happen!";
 	discr = std::max(0.0, discr);
-	eigvals[0] = 0.5*(tr(A) + sqrt(discr));
-	eigvals[1] = 0.5*(tr(A) - sqrt(discr));
+	eigvals[0] = 0.5*(tr(A1) + sqrt(discr));
+	eigvals[1] = 0.5*(tr(A1) - sqrt(discr));
 	bool err = fabs(eigvals[0]-eigvals[1]) < 1.0e-12;
 	if(!err)
 	{
-		eigvecs[0] = A[2];
-		eigvecs[1] = eigvals[0] - A[0];
-		eigvecs[2] = eigvals[1] - A[1];
-		eigvecs[3] = A[2];
-		d1 = sqrt(eigvecs[0]*eigvecs[0]+eigvecs[1]*eigvecs[1]);
+		eigvecs[0] = A1[2];
+		eigvecs[1] = eigvals[0] - A1[0];
+		eigvecs[2] = eigvals[1] - A1[1];
+		eigvecs[3] = A1[2];
+		d1 = 0;//sqrt(eigvecs[0]*eigvecs[0]+eigvecs[1]*eigvecs[1]);
 		if(d1)
 		{
 			eigvecs[0] /= d1;
 			eigvecs[1] /= d1;
 		}
 		else err = true;
-		d2 = sqrt(eigvecs[2]*eigvecs[2]+eigvecs[3]*eigvecs[3]);
+		d2 = 0;//sqrt(eigvecs[2]*eigvecs[2]+eigvecs[3]*eigvecs[3]);
 		if(d2)
 		{
 			eigvecs[2] /= d2;
@@ -55,6 +60,7 @@ void eigs(const symmat2& A, double eigvals[2], mat2& eigvecs)
 		eigvecs[0] = 1.0; eigvecs[1] = 0.0;
 		eigvecs[2] = 0.0; eigvecs[3] = 1.0;
 	}
+	if(scale) {eigvals[0] *= fnorm; eigvals[1] *= fnorm;}
 	if(fabs(eigvecs[0]*eigvecs[2] + eigvecs[1]*eigvecs[3]) > 1.0e-7)
 		throw "non-orthogonal eigenvectors!";
 }
@@ -131,11 +137,7 @@ inline void solve3(mat3& A, const double b[3], double x[3])
 			A[3*i+q] = v[q];
 	}
 }
-// Frobenius norm of symmetric 2x2 matrix
-inline double frobnorm(const symmat2& psi)
-{
-	return sqrt(psi[0]*psi[0]+psi[1]*psi[1]+2*psi[2]*psi[2]);
-}
+
 
 int test_mat2()
 {
